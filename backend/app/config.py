@@ -3,7 +3,7 @@ import stat
 from pathlib import Path
 
 APP_NAME = "SirDoge Ledger"
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_IMPORT_ROWS = 50_000
@@ -35,6 +35,14 @@ DB_PATH = USER_DATA_DIR / "sir_doge.db"
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 SAMPLE_DATA_DIR = PROJECT_ROOT / "sample_data"
 DEFAULT_PORT = int(os.environ.get("SIR_DOGE_PORT", "8000"))
+
+
+def is_dev_open() -> bool:
+    return os.environ.get("SIR_DOGE_DEV", "").lower() in ("1", "true", "yes")
+
+
+def demo_db_path() -> Path:
+    return USER_DATA_DIR / "demo.db"
 
 
 def ensure_dirs() -> None:

@@ -1,5 +1,3 @@
-const API = "/api";
-
 export const CSRF_HEADER = "X-Sir-Doge";
 
 export const MUTATION_HEADERS: Record<string, string> = {
@@ -10,22 +8,59 @@ const defaultInit: RequestInit = {
   credentials: "include",
 };
 
-export async function bootstrapAuth(): Promise<void> {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get("token");
-  if (!token) return;
-  try {
-    await fetch(`${API}/auth?token=${encodeURIComponent(token)}`, {
-      method: "POST",
-      headers: MUTATION_HEADERS,
-      credentials: "include",
-    });
-  } finally {
-    params.delete("token");
-    const clean = window.location.pathname + (params.toString() ? `?${params}` : "");
-    window.history.replaceState({}, "", clean);
-  }
+export async function bootstrapAuth(): Promise<boolean> {
+  return false;
 }
+
+export const authApi = {
+  status: () => api<{ needs_setup: boolean; auth_required: boolean; dev_open: boolean }>("/api/auth/status"),
+  checkSession: async () => {
+    const res = await fetch("/api/money/stats", { credentials: "include" });
+    return res.ok;
+  },
+  login: async (password: string) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { ...MUTATION_HEADERS, "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ password }),
+    });
+    return res.ok;
+  },
+  setup: async (password: string, enableEncryption = false) => {
+    const res = await fetch("/api/auth/setup", {
+      method: "POST",
+      headers: { ...MUTATION_HEADERS, "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ password, enable_encryption: enableEncryption }),
+    });
+    if (!res.ok) return null;
+    return res.json() as Promise<{ recovery_key: string }>;
+  },
+  demo: async () => {
+    const res = await fetch("/api/auth/demo", { method: "POST", headers: MUTATION_HEADERS, credentials: "include" });
+    return res.ok;
+  },
+  recover: async (recovery_key: string, new_password: string) => {
+    const res = await fetch("/api/auth/recover", {
+      method: "POST",
+      headers: { ...MUTATION_HEADERS, "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ recovery_key, new_password }),
+    });
+    return res.ok;
+  },
+};
+
+export const settingsApi = {
+  get: () => api<Record<string, unknown>>("/api/settings"),
+  patch: (body: Record<string, unknown>) =>
+    api<Record<string, unknown>>("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+};
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method || "GET").toUpperCase();
@@ -65,6 +100,7 @@ export type RecurringGroup = {
   decision: string;
   use_it: string | null;
   worth_it: string | null;
+  cancel_by: string | null;
 };
 
 export type LifeItem = {
@@ -112,11 +148,17 @@ export const moneyApi = {
     needs_review?: boolean;
     income_review?: boolean;
     category?: string;
+    search?: string;
+    tag?: string;
+    month?: string;
   }) => {
     const q = new URLSearchParams();
     if (params?.needs_review != null) q.set("needs_review", String(params.needs_review));
     if (params?.income_review != null) q.set("income_review", String(params.income_review));
     if (params?.category) q.set("category", params.category);
+    if (params?.search) q.set("search", params.search);
+    if (params?.tag) q.set("tag", params.tag);
+    if (params?.month) q.set("month", params.month);
     const s = q.toString();
     return api<{ transactions: Transaction[] }>(`/api/money/transactions${s ? `?${s}` : ""}`);
   },
@@ -162,6 +204,30 @@ export const moneyApi = {
       body: JSON.stringify(body),
     }),
   rules: () => api<{ rules: Array<Record<string, unknown>> }>("/api/money/rules"),
+  updateRule: (id: number, body: { category?: string; enabled?: boolean }) =>
+    api(`/api/money/rules/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  alerts: () =>
+    api<{
+      budget: Array<Record<string, unknown>>;
+      price: Array<Record<string, unknown>>;
+      recommendations: Array<Record<string, unknown>>;
+    }>("/api/money/alerts"),
+  importSample: () => api<{ row_count: number }>("/api/money/import/sample", { method: "POST" }),
+  bankProfiles: () => api<{ profiles: Array<Record<string, unknown>> }>("/api/money/bank-profiles"),
+  budgets: () => api<{ budgets: Array<Record<string, unknown>>; savings_goals: Array<Record<string, unknown>> }>(
+    "/api/money/budgets",
+  ),
+  setBudget: (category: string, monthly_limit: number | null, enabled = true) =>
+    api("/api/money/budgets", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category, monthly_limit, enabled }),
+    }),
+  yearComparison: () => api<{ years: Array<Record<string, unknown>> }>("/api/money/year-comparison"),
 };
 
 export const lifeApi = {

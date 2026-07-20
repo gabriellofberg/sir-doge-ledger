@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SirDoge Ledger launcher — starts uvicorn and opens browser with auth token."""
+"""SirDoge Ledger launcher."""
 
 from __future__ import annotations
 
@@ -31,13 +31,10 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parent
 
 
-def _open_browser_later(port: int, token: str, frontend_port: int) -> None:
+def _open_browser_later(port: int, frontend_port: int) -> None:
     time.sleep(1.5)
-    # Dev: Vite frontend; prod: single port
-    if os.environ.get("SIR_DOGE_PROD") == "1":
-        webbrowser.open(f"http://127.0.0.1:{port}/?token={token}")
-    else:
-        webbrowser.open(f"http://127.0.0.1:{frontend_port}/?token={token}")
+    url = f"http://127.0.0.1:{frontend_port if os.environ.get('SIR_DOGE_PROD') != '1' else port}/"
+    webbrowser.open(url)
 
 
 def main() -> int:
@@ -46,24 +43,18 @@ def main() -> int:
     port = _find_free_port()
     frontend_port = int(os.environ.get("FRONTEND_PORT", "5173"))
     os.environ["SIR_DOGE_PORT"] = str(port)
+    os.environ.setdefault("SIR_DOGE_DEV", "1")
     os.environ["PYTHONPATH"] = str(root / "backend") + os.pathsep + os.environ.get("PYTHONPATH", "")
 
-    from app.services import auth
-
-    token = auth.ensure_token()
-    hint = auth.token_hint(token)
     print("=" * 54)
     print(" SirDoge Ledger")
     print("=" * 54)
     print(f" Frontend http://127.0.0.1:{frontend_port}/")
-    print(f" Token hint: {hint}  (full token: {auth.TOKEN_FILE})")
-    print(" Opening browser to sign in…")
-    print(" Data stays on this machine only.")
+    if os.environ.get("SIR_DOGE_DEV") == "1":
+        print(" Dev mode: no password (SIR_DOGE_DEV=1)")
     print("=" * 54)
 
-    threading.Thread(
-        target=_open_browser_later, args=(port, token, frontend_port), daemon=True
-    ).start()
+    threading.Thread(target=_open_browser_later, args=(port, frontend_port), daemon=True).start()
 
     proc = subprocess.Popen(
         [

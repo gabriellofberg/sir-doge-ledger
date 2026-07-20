@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import EmptyState from "../components/EmptyState";
 import { formatKr, moneyApi, type Transaction } from "../api";
 import CategoryEditModal from "../components/CategoryEditModal";
+import { useI18n } from "../i18n";
 
 export default function TransactionsPage() {
+  const { t, cat } = useI18n();
   const [params, setParams] = useSearchParams();
   const reviewOnly = params.get("review") === "1";
   const incomeOnly = params.get("income") === "1";
@@ -11,33 +14,37 @@ export default function TransactionsPage() {
   const [rows, setRows] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [editing, setEditing] = useState<Transaction | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
-  const load = () =>
-    Promise.all([
+  const load = () => {
+    setLoading(true);
+    return Promise.all([
       moneyApi.transactions({
         needs_review: reviewOnly ? true : undefined,
         income_review: incomeOnly ? true : undefined,
         category: categoryFilter,
+        search: search.trim() || undefined,
       }),
       moneyApi.categories(),
     ])
-      .then(([t, c]) => {
-        setRows(t.transactions);
+      .then(([tx, c]) => {
+        setRows(tx.transactions);
         setCategories(c.categories);
       })
-      .catch((e) => setError(String(e)));
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     load();
-  }, [reviewOnly, incomeOnly, categoryFilter]);
+  }, [reviewOnly, incomeOnly, categoryFilter, search]);
 
   const title = useMemo(() => {
-    if (incomeOnly) return "Income to review";
-    if (reviewOnly) return "Needs category review";
-    if (categoryFilter) return `Category: ${categoryFilter}`;
-    return "All transactions";
-  }, [reviewOnly, incomeOnly, categoryFilter]);
+    if (incomeOnly) return t.transactions.incomeReview;
+    if (reviewOnly) return t.transactions.needsReview;
+    if (categoryFilter) return `${t.transactions.categoryPrefix} ${cat(categoryFilter)}`;
+    return t.transactions.all;
+  }, [reviewOnly, incomeOnly, categoryFilter, t, cat]);
 
   async function save(category: string, remember: boolean) {
     if (!editing) return;
@@ -64,7 +71,7 @@ export default function TransactionsPage() {
                 setParams(next);
               }}
             />
-            Unclear only
+            {t.transactions.unclearOnly}
           </label>
           <label className="toggle">
             <input
@@ -79,50 +86,78 @@ export default function TransactionsPage() {
                 setParams(next);
               }}
             />
-            Income review
+            {t.transactions.incomeFilter}
           </label>
         </div>
       </div>
-      <p className="lede">
-        Tick <em>Remember for similar purchases</em> when recategorizing to teach SirDoge for next
-        import.
-      </p>
-      {error && <p className="error">{error}</p>}
+      <p className="lede">{t.transactions.lede}</p>
+      <label className="search-inline">
+        {t.transactions.search}
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t.transactions.searchPlaceholder}
+        />
+      </label>
 
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Description</th>
-              <th>Amount</th>
-              <th>Category</th>
-              <th>Source</th>
+              <th>{t.transactions.date}</th>
+              <th>{t.transactions.description}</th>
+              <th>{t.transactions.amount}</th>
+              <th>{t.transactions.category}</th>
+              <th>{t.transactions.source}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((t) => (
-              <tr key={t.id} className={t.needs_review ? "needs-review" : undefined}>
-                <td>{t.tx_date}</td>
-                <td>
-                  <div>{t.raw_description}</div>
-                  {t.needs_review ? <span className="badge">unclear</span> : null}
-                </td>
-                <td className={t.amount < 0 ? "neg" : "pos"}>{formatKr(t.amount)}</td>
-                <td>{t.category}</td>
-                <td className="muted">{t.category_source}</td>
-                <td>
-                  <button type="button" onClick={() => setEditing(t)}>
-                    Edit
-                  </button>
+            {loading && (
+              <tr>
+                <td colSpan={6} className="table-empty">
+                  {t.transactions.loading}
                 </td>
               </tr>
-            ))}
+            )}
+            {!loading &&
+              rows.map((row) => (
+                <tr key={row.id} className={row.needs_review ? "needs-review" : undefined}>
+                  <td>{row.tx_date}</td>
+                  <td>
+                    <div>{row.raw_description}</div>
+                    {row.needs_review ? <span className="badge">{t.transactions.unclear}</span> : null}
+                  </td>
+                  <td className={row.amount < 0 ? "neg" : "pos"}>{formatKr(row.amount)}</td>
+                  <td>{cat(row.category)}</td>
+                  <td className="muted">{row.category_source}</td>
+                  <td>
+                    <button type="button" onClick={() => setEditing(row)}>
+                      {t.transactions.edit}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={6} className="table-empty">
+                  {t.transactions.emptyView}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
-        {rows.length === 0 && <p className="muted">No transactions in this view.</p>}
       </div>
+
+      {!loading && rows.length === 0 && !reviewOnly && !incomeOnly && !categoryFilter && (
+        <EmptyState
+          title={t.transactions.emptyTitle}
+          description={t.transactions.emptyHint}
+          actionLabel={t.transactions.emptyCta}
+          actionTo="/import"
+        />
+      )}
 
       {editing && (
         <CategoryEditModal

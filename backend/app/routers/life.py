@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from ..services import life
@@ -27,8 +28,20 @@ class LifeItemPatch(BaseModel):
 
 
 @router.get("/items")
-def list_items() -> dict[str, Any]:
-    return {"items": life.list_items()}
+def list_items(sort: str = "due") -> dict[str, Any]:
+    return {"items": life.list_items(sort=sort)}
+
+
+@router.get("/export.ics")
+def export_ics() -> Response:
+    from fastapi.responses import PlainTextResponse
+
+    body = life.export_ics()
+    return PlainTextResponse(
+        content=body,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="sir-doge-life.ics"'},
+    )
 
 
 @router.post("/items")

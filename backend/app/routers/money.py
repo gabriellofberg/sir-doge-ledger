@@ -6,8 +6,11 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from ..config import MAX_TRANSACTION_LIMIT
+from ..config import MAX_TRANSACTION_LIMIT, SAMPLE_DATA_DIR
+from ..db import CATEGORIES
 from ..services import money
+from ..services import budgets as budget_svc
+from ..services import recommendations as reco_svc
 from ..services.import_parse import ColumnMapping
 from ..services.import_sessions import save_upload
 
@@ -25,6 +28,48 @@ class RecurringUpdate(BaseModel):
     use_it: str | None = None
     worth_it: str | None = None
     name: str | None = None
+    cancel_by: str | None = None
+
+
+class ManualTransaction(BaseModel):
+    tx_date: str
+    amount: float
+    description: str
+    category: str = "Other"
+    notes: str | None = None
+    tags: list[str] = []
+
+
+class TransactionPatch(BaseModel):
+    category: str | None = None
+    remember: bool = False
+    match_text: str | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
+
+
+class BulkCategoryUpdate(BaseModel):
+    transaction_ids: list[int]
+    category: str
+    remember: bool = False
+
+
+class BankProfileIn(BaseModel):
+    name: str
+    mapping_json: dict[str, Any]
+
+
+class BudgetIn(BaseModel):
+    category: str
+    monthly_limit: float | None
+    enabled: bool = True
+
+
+class SavingsGoalIn(BaseModel):
+    id: int | None = None
+    name: str
+    target_amount: float
+    current_amount: float = 0
 
 
 @router.get("/categories")
@@ -105,6 +150,9 @@ def transactions(
     needs_review: bool | None = None,
     income_review: bool | None = None,
     category: str | None = None,
+    search: str | None = None,
+    tag: str | None = None,
+    month: str | None = None,
     limit: int = 500,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -114,23 +162,114 @@ def transactions(
         needs_review=needs_review,
         income_review=income_review,
         category=category,
+        search=search,
+        tag=tag,
+        month=month,
         limit=limit,
         offset=offset,
     )
     return {"transactions": items}
 
 
+@router.post("/transactions")
+def create_transaction(body: ManualTransaction) -> dict[str, Any]:
+    return money.create_manual_transaction(
+        body.tx_date, body.amount, body.description, body.category, body.notes, body.tags
+    )
+
+
 @router.patch("/transactions/{tx_id}")
-def patch_transaction(tx_id: int, body: CategoryUpdate) -> dict[str, Any]:
+def patch_transaction(tx_id: int, body: TransactionPatch) -> dict[str, Any]:
     try:
-        return money.update_transaction_category(
-            tx_id,
-            body.category,
-            remember=body.remember,
-            match_text=body.match_text,
-        )
+        if body.category is not None:
+            return money.update_transaction_category(
+                tx_id,
+                body.category,
+                remember=body.remember,
+                match_text=body.match_text,
+                notes=body.notes,
+                tags=body.tags,
+            )
+        return money.update_transaction_meta(tx_id, notes=body.notes, tags=body.tags)
     except KeyError:
         raise HTTPException(404, "Transaction not found") from None
+
+
+@router.post("/transactions/bulk-category")
+def bulk_category(body: BulkCategoryUpdate) -> dict[str, Any]:
+    return {"updated": money.bulk_update_category(body.transaction_ids, body.category, body.remember)}
+
+
+@router.get("/imports")
+def import_history() -> dict[str, Any]:
+    return {"imports": money.list_imports()}
+
+
+@router.post("/import/sample")
+def import_sample() -> dict[str, Any]:
+    sample = SAMPLE_DATA_DIR / "sample_transactions.csv"
+    if not sample.is_file():
+        raise HTTPException(404, "Sample file missing")
+    data = sample.read_bytes()
+    session_id, safe_name = save_upload("sample_transactions.csv", data)
+    mapping = ColumnMapping(
+        date="Bokföringsdag",
+        amount="Belopp",
+        description="Text",
+        amount_decimal=",",
+        delimiter=";",
+    )
+    return money.commit_import_session(session_id, mapping, safe_name)
+
+
+@router.get("/bank-profiles")
+def bank_profiles() -> dict[str, Any]:
+    return {"profiles": money.list_bank_profiles()}
+
+
+@router.post("/bank-profiles")
+def save_bank_profile(body: BankProfileIn) -> dict[str, Any]:
+    return money.save_bank_profile(body.name, body.mapping_json)
+
+
+@router.delete("/bank-profiles/{profile_id}")
+def delete_bank_profile(profile_id: int) -> dict[str, str]:
+    money.delete_bank_profile(profile_id)
+    return {"status": "ok"}
+
+
+@router.get("/alerts")
+def alerts() -> dict[str, Any]:
+    return {
+        "budget": budget_svc.budget_alerts(),
+        "price": money.price_alerts(),
+        "recommendations": reco_svc.recommendations(),
+    }
+
+
+@router.get("/budgets")
+def get_budgets() -> dict[str, Any]:
+    return {"budgets": budget_svc.list_budgets(), "savings_goals": budget_svc.list_savings_goals()}
+
+
+@router.put("/budgets")
+def put_budget(body: BudgetIn) -> dict[str, Any]:
+    return budget_svc.upsert_budget(body.category, body.monthly_limit, enabled=body.enabled)
+
+
+@router.post("/savings-goals")
+def put_savings(body: SavingsGoalIn) -> dict[str, Any]:
+    return budget_svc.upsert_savings_goal(body.id, body.name, body.target_amount, body.current_amount)
+
+
+@router.get("/year-comparison")
+def year_comparison() -> dict[str, Any]:
+    return {"years": money.year_comparison()}
+
+
+@router.get("/recurring/alerts")
+def recurring_alerts() -> dict[str, Any]:
+    return {"alerts": money.price_alerts(), "yearly_total": money.recurring_yearly_total()}
 
 
 @router.get("/recurring")
@@ -147,6 +286,7 @@ def patch_recurring(group_id: int, body: RecurringUpdate) -> dict[str, Any]:
             use_it=body.use_it,
             worth_it=body.worth_it,
             name=body.name,
+            cancel_by=body.cancel_by,
         )
     except KeyError:
         raise HTTPException(404, "Not found") from None
@@ -161,3 +301,11 @@ def rules() -> dict[str, Any]:
 def remove_rule(rule_id: int) -> dict[str, str]:
     money.delete_rule(rule_id)
     return {"status": "ok"}
+
+
+@router.patch("/rules/{rule_id}")
+def patch_rule(rule_id: int, body: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return money.update_rule(rule_id, category=body.get("category"), enabled=body.get("enabled"))
+    except KeyError:
+        raise HTTPException(404, "Not found") from None

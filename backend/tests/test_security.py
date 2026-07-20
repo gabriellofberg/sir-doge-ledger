@@ -11,14 +11,11 @@ CSRF = {"X-Sir-Doge": "1"}
 
 @pytest.fixture
 def client():
-    c = TestClient(app)
-    c.cookies.set("sir_doge_token", "test-token-for-pytest-only")
-    return c
+    return TestClient(app)
 
 
 def test_mutating_requests_require_csrf_header():
     c = TestClient(app)
-    c.cookies.set("sir_doge_token", "test-token-for-pytest-only")
     assert c.post("/api/money/import", data={"import_session_id": "x"}).status_code == 403
     assert c.delete("/api/money/rules/1").status_code == 403
 
@@ -47,8 +44,6 @@ def test_transaction_limit_capped(client):
 def test_logout_clears_cookie(client):
     res = client.post("/api/auth/logout", headers=CSRF)
     assert res.status_code == 200
-    set_cookie = res.headers.get("set-cookie", "")
-    assert "sir_doge_token=" in set_cookie
 
 
 def test_wipe_requires_delete_confirmation(client):

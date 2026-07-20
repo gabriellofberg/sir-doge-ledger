@@ -177,6 +177,9 @@ def list_transactions(
     needs_review: bool | None = None,
     income_review: bool | None = None,
     category: str | None = None,
+    search: str | None = None,
+    tag: str | None = None,
+    month: str | None = None,
     limit: int = 500,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -185,28 +188,48 @@ def list_transactions(
     clauses: list[str] = []
     params: list[Any] = []
     if needs_review is True:
-        clauses.append("needs_review = 1")
+        clauses.append("t.needs_review = 1")
     if needs_review is False:
-        clauses.append("needs_review = 0")
+        clauses.append("t.needs_review = 0")
     if income_review is True:
-        clauses.append("amount > 0")
-        clauses.append(f"category NOT IN ('{INCOME_CAT}', '{TRANSFER_CAT}')")
+        clauses.append("t.amount > 0")
+        clauses.append(f"t.category NOT IN ('{INCOME_CAT}', '{TRANSFER_CAT}')")
     if category:
-        clauses.append("category = ?")
+        clauses.append("t.category = ?")
         params.append(category)
+    if search:
+        clauses.append("(t.raw_description LIKE ? OR t.normalized_merchant LIKE ?)")
+        q = f"%{search.strip()}%"
+        params.extend([q, q])
+    if month:
+        clauses.append("substr(t.tx_date, 1, 7) = ?")
+        params.append(month.strip())
+    if tag:
+        clauses.append(
+            "EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id = t.id AND tt.tag = ?)"
+        )
+        params.append(tag.strip().lower())
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     params.extend([limit, offset])
     with get_db() as conn:
         rows = conn.execute(
             f"""
-            SELECT * FROM transactions
+            SELECT t.*, (
+                SELECT GROUP_CONCAT(tag, ',') FROM transaction_tags tt
+                WHERE tt.transaction_id = t.id
+            ) AS tags_csv
+            FROM transactions t
             {where}
-            ORDER BY tx_date DESC, id DESC
+            ORDER BY t.tx_date DESC, t.id DESC
             LIMIT ? OFFSET ?
             """,
             params,
         ).fetchall()
-        return rows_to_dicts(rows)
+        out = rows_to_dicts(rows)
+        for row in out:
+            raw = row.pop("tags_csv", None) or ""
+            row["tags"] = [t.strip() for t in raw.split(",") if t.strip()]
+        return out
 
 
 def category_summary() -> list[dict[str, Any]]:
@@ -303,6 +326,8 @@ def update_transaction_category(
     *,
     remember: bool,
     match_text: str | None = None,
+    notes: str | None = None,
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
     category = ensure_category(category)
     with get_db() as conn:
@@ -338,8 +363,14 @@ def update_transaction_category(
             """,
             (category, source, tx_id),
         )
+        if notes is not None:
+            conn.execute("UPDATE transactions SET notes = ? WHERE id = ?", (notes, tx_id))
+        if tags is not None:
+            _set_tags(conn, tx_id, tags)
         updated = conn.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
-        return dict(updated)
+        out = dict(updated)
+        out["tags"] = _get_tags(conn, tx_id)
+        return out
 
 
 def list_recurring() -> list[dict[str, Any]]:
@@ -357,6 +388,7 @@ def update_recurring(
     use_it: str | None = None,
     worth_it: str | None = None,
     name: str | None = None,
+    cancel_by: str | None = None,
 ) -> dict[str, Any]:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM recurring_groups WHERE id = ?", (group_id,)).fetchone()
@@ -366,13 +398,14 @@ def update_recurring(
         use_it = use_it if use_it is not None else row["use_it"]
         worth_it = worth_it if worth_it is not None else row["worth_it"]
         name = name if name is not None else row["name"]
+        cancel_by = cancel_by if cancel_by is not None else row["cancel_by"]
         conn.execute(
             """
             UPDATE recurring_groups
-            SET decision = ?, use_it = ?, worth_it = ?, name = ?, updated_at = ?
+            SET decision = ?, use_it = ?, worth_it = ?, name = ?, cancel_by = ?, updated_at = ?
             WHERE id = ?
             """,
-            (decision, use_it, worth_it, name, now_iso(), group_id),
+            (decision, use_it, worth_it, name, cancel_by, now_iso(), group_id),
         )
         return dict(conn.execute("SELECT * FROM recurring_groups WHERE id = ?", (group_id,)).fetchone())
 
@@ -441,3 +474,221 @@ def money_stats() -> dict[str, Any]:
             "uncategorized_income_count": int(uncategorized_income),
             "recurring_yearly_total": round(float(yearly), 2),
         }
+
+
+def _get_tags(conn, tx_id: int) -> list[str]:
+    rows = conn.execute("SELECT tag FROM transaction_tags WHERE transaction_id = ?", (tx_id,)).fetchall()
+    return [r["tag"] for r in rows]
+
+
+def _set_tags(conn, tx_id: int, tags: list[str]) -> None:
+    conn.execute("DELETE FROM transaction_tags WHERE transaction_id = ?", (tx_id,))
+    for tag in {t.strip().lower() for t in tags if t.strip()}:
+        conn.execute(
+            "INSERT INTO transaction_tags (transaction_id, tag) VALUES (?, ?)", (tx_id, tag)
+        )
+
+
+def update_transaction_meta(
+    tx_id: int, *, notes: str | None = None, tags: list[str] | None = None
+) -> dict[str, Any]:
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
+        if not row:
+            raise KeyError("transaction not found")
+        if notes is not None:
+            conn.execute("UPDATE transactions SET notes = ? WHERE id = ?", (notes, tx_id))
+        if tags is not None:
+            _set_tags(conn, tx_id, tags)
+        out = dict(conn.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone())
+        out["tags"] = _get_tags(conn, tx_id)
+        return out
+
+
+def create_manual_transaction(
+    tx_date: str,
+    amount: float,
+    description: str,
+    category: str,
+    notes: str | None,
+    tags: list[str],
+) -> dict[str, Any]:
+    category = ensure_category(category)
+    h = tx_hash(tx_date, amount, description)
+    with get_db() as conn:
+        exists = conn.execute("SELECT id FROM transactions WHERE tx_hash = ?", (h,)).fetchone()
+        if exists:
+            raise ValueError("Duplicate transaction")
+        cur = conn.execute(
+            """
+            INSERT INTO transactions (
+                import_id, tx_date, amount, raw_description, normalized_merchant,
+                category, category_source, confidence, needs_review, tx_hash, notes, created_at
+            ) VALUES (NULL, ?, ?, ?, ?, ?, 'manual', 1.0, 0, ?, ?, ?)
+            """,
+            (
+                tx_date,
+                amount,
+                description,
+                normalize_merchant(description),
+                category,
+                h,
+                notes,
+                now_iso(),
+            ),
+        )
+        tx_id = cur.lastrowid
+        _set_tags(conn, tx_id, tags)
+        _refresh_recurring(conn)
+        out = dict(conn.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone())
+        out["tags"] = tags
+        return out
+
+
+def bulk_update_category(ids: list[int], category: str, remember: bool) -> int:
+    category = ensure_category(category)
+    updated = 0
+    for tx_id in ids:
+        try:
+            update_transaction_category(tx_id, category, remember=remember)
+            updated += 1
+        except KeyError:
+            continue
+    return updated
+
+
+def list_imports() -> list[dict[str, Any]]:
+    with get_db() as conn:
+        return rows_to_dicts(
+            conn.execute("SELECT * FROM imports ORDER BY imported_at DESC LIMIT 50").fetchall()
+        )
+
+
+def list_bank_profiles() -> list[dict[str, Any]]:
+    with get_db() as conn:
+        rows = rows_to_dicts(conn.execute("SELECT * FROM bank_profiles ORDER BY name").fetchall())
+        for row in rows:
+            try:
+                row["mapping"] = json.loads(row.pop("mapping_json", "{}"))
+            except json.JSONDecodeError:
+                row["mapping"] = {}
+        return rows
+
+
+def save_bank_profile(name: str, mapping: dict[str, Any]) -> dict[str, Any]:
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO bank_profiles (name, mapping_json, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET mapping_json = excluded.mapping_json
+            """,
+            (name.strip(), json.dumps(mapping), now_iso()),
+        )
+        row = conn.execute("SELECT * FROM bank_profiles WHERE name = ?", (name.strip(),)).fetchone()
+        out = dict(row)
+        out["mapping"] = mapping
+        return out
+
+
+def delete_bank_profile(profile_id: int) -> None:
+    with get_db() as conn:
+        conn.execute("DELETE FROM bank_profiles WHERE id = ?", (profile_id,))
+
+
+def update_rule(rule_id: int, *, category: str | None = None, enabled: bool | None = None) -> dict[str, Any]:
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM category_rules WHERE id = ?", (rule_id,)).fetchone()
+        if not row:
+            raise KeyError("not found")
+        cat = ensure_category(category) if category else row["category"]
+        en = row["enabled"] if enabled is None else (1 if enabled else 0)
+        conn.execute(
+            "UPDATE category_rules SET category = ?, enabled = ? WHERE id = ?",
+            (cat, en, rule_id),
+        )
+        return dict(conn.execute("SELECT * FROM category_rules WHERE id = ?", (rule_id,)).fetchone())
+
+
+def _detect_price_changes(conn) -> None:
+    rows = conn.execute(
+        """
+        SELECT normalized_merchant, ABS(amount) AS amt, tx_date
+        FROM transactions
+        WHERE amount < 0
+        ORDER BY normalized_merchant, tx_date
+        """
+    ).fetchall()
+    by_merchant: dict[str, list[float]] = {}
+    for r in rows:
+        by_merchant.setdefault(r["normalized_merchant"], []).append(float(r["amt"]))
+    for merchant, amounts in by_merchant.items():
+        if len(amounts) < 3:
+            continue
+        typical = sorted(set(round(a, 2) for a in amounts))
+        if len(typical) < 2:
+            continue
+        old, new = typical[-2], typical[-1]
+        if old <= 0 or new <= old * 1.08:
+            continue
+        exists = conn.execute(
+            """
+            SELECT id FROM recurring_price_events
+            WHERE normalized_merchant = ? AND old_amount = ? AND new_amount = ?
+            """,
+            (merchant, old, new),
+        ).fetchone()
+        if not exists:
+            conn.execute(
+                """
+                INSERT INTO recurring_price_events
+                (normalized_merchant, old_amount, new_amount, detected_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (merchant, old, new, now_iso()),
+            )
+
+
+def price_alerts() -> list[dict[str, Any]]:
+    with get_db() as conn:
+        _detect_price_changes(conn)
+        rows = rows_to_dicts(
+            conn.execute(
+                """
+                SELECT * FROM recurring_price_events
+                WHERE acknowledged = 0
+                ORDER BY detected_at DESC
+                LIMIT 20
+                """
+            ).fetchall()
+        )
+    for row in rows:
+        row["pct_change"] = round((row["new_amount"] - row["old_amount"]) / row["old_amount"] * 100, 1)
+    return rows
+
+
+def recurring_yearly_total() -> float:
+    with get_db() as conn:
+        val = conn.execute(
+            "SELECT COALESCE(SUM(yearly_cost), 0) AS s FROM recurring_groups WHERE decision NOT IN ('ignore')"
+        ).fetchone()["s"]
+        return round(float(val), 2)
+
+
+def year_comparison() -> list[dict[str, Any]]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT substr(tx_date, 1, 4) AS year,
+                   category,
+                   ROUND(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 2) AS spent
+            FROM transactions
+            WHERE amount < 0
+            GROUP BY substr(tx_date, 1, 4), category
+            ORDER BY year DESC, spent DESC
+            """
+        ).fetchall()
+    by_year: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        by_year.setdefault(r["year"], []).append({"category": r["category"], "spent": float(r["spent"])})
+    return [{"year": y, "categories": cats} for y, cats in sorted(by_year.items(), reverse=True)]

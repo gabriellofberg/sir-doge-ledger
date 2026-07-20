@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { formatKr, type Transaction } from "../api";
+import { useI18n } from "../i18n";
 
 type Props = {
   tx: Transaction;
@@ -9,6 +10,7 @@ type Props = {
 };
 
 export default function CategoryEditModal({ tx, categories, onClose, onSave }: Props) {
+  const { t, cat } = useI18n();
   const [category, setCategory] = useState(tx.category === "Unclear" ? "Other" : tx.category);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -28,25 +30,21 @@ export default function CategoryEditModal({ tx, categories, onClose, onSave }: P
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <form
-        className="modal"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={submit}
-      >
-        <h2>Re-categorize</h2>
+      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <h2>{t.modal.title}</h2>
         <p className="muted">
           {tx.tx_date} · {formatKr(tx.amount)}
           <br />
           {tx.raw_description}
         </p>
         <label>
-          Category
+          {t.modal.category}
           <select value={category} onChange={(e) => setCategory(e.target.value)}>
             {categories
               .filter((c) => c !== "Unclear")
               .map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {cat(c)}
                 </option>
               ))}
           </select>
@@ -58,21 +56,17 @@ export default function CategoryEditModal({ tx, categories, onClose, onSave }: P
             onChange={(e) => setRemember(e.target.checked)}
           />
           <span>
-            Remember for similar purchases
-            <small>
-              {remember
-                ? "Always use this category when the merchant text matches (learned rule)."
-                : "Only change this one purchase."}
-            </small>
+            {t.modal.remember}
+            <small>{remember ? t.modal.rememberOn : t.modal.rememberOff}</small>
           </span>
         </label>
         {error && <p className="error">{error}</p>}
         <div className="modal-actions">
           <button type="button" onClick={onClose} disabled={busy}>
-            Cancel
+            {t.common.cancel}
           </button>
           <button type="submit" className="primary" disabled={busy}>
-            Save
+            {t.common.save}
           </button>
         </div>
       </form>

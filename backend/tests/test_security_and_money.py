@@ -72,20 +72,22 @@ def test_resolve_upload_rejects_traversal(tmp_path):
         resolve_upload_path(str(evil))
 
 
-def test_auth_required():
+def test_auth_required(monkeypatch):
     from fastapi.testclient import TestClient
     from app.main import app
+    import app.services.auth as auth_mod
 
+    monkeypatch.setattr(auth_mod, "auth_enabled", lambda: True)
+    monkeypatch.setattr(auth_mod, "session_matches", lambda _t: False)
     c = TestClient(app)
     r = c.get("/api/money/stats")
     assert r.status_code == 401
 
 
-def test_auth_with_token():
+def test_auth_with_dev_open():
     from fastapi.testclient import TestClient
     from app.main import app
 
     c = TestClient(app)
-    c.cookies.set("sir_doge_token", "test-token-for-pytest-only")
     r = c.get("/api/money/stats")
     assert r.status_code == 200

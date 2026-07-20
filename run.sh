@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SirDoge Ledger — local start script
-#   ./run.sh        Development: backend + Vite
-#   ./run.sh prod   Build frontend, single port
+#   ./run.sh        Development: backend + Vite (open auth)
+#   ./run.sh prod   Build frontend, single port (password auth)
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -32,10 +32,20 @@ fi
 
 export PYTHONPATH="${PWD}/backend${PYTHONPATH:+:$PYTHONPATH}"
 
-# Always-on local API token (stricter than HomeSec dev mode)
-TOKEN=$(python -c "from app.services.auth import ensure_token; print(ensure_token())")
-TOKEN_HINT=$(python -c "from app.services.auth import token_hint; print(token_hint('$TOKEN'))")
-TOKEN_FILE=$(python -c "from app.services.auth import TOKEN_FILE; print(TOKEN_FILE)")
+if [ "$MODE" = "prod" ]; then
+  unset SIR_DOGE_DEV
+  export SIR_DOGE_PROD=1
+  echo "Building frontend..."
+  (cd frontend && npm run build)
+  echo "Serving on http://127.0.0.1:${BACKEND_PORT}/"
+  echo "Set a password on first visit. Recovery key saved to ~/.local/share/sir-doge-ledger/recovery-hint.txt"
+  exec uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$BACKEND_PORT"
+fi
+
+export SIR_DOGE_DEV=1
+echo "Dev mode: no password required (SIR_DOGE_DEV=1)"
+echo "Backend  http://127.0.0.1:${BACKEND_PORT}/api/health"
+echo "Frontend http://127.0.0.1:${FRONTEND_PORT}/"
 
 open_browser() {
   local url="$1"
@@ -48,6 +58,8 @@ threading.Thread(target=open_url, daemon=True).start()
 " &
 }
 
+open_browser "http://127.0.0.1:${FRONTEND_PORT}/"
+
 cleanup() {
   if [ -n "${BACKEND_PID:-}" ]; then
     kill "$BACKEND_PID" 2>/dev/null || true
@@ -55,26 +67,6 @@ cleanup() {
   fi
 }
 trap cleanup EXIT INT TERM
-
-if [ "$MODE" = "prod" ]; then
-  export SIR_DOGE_PROD=1
-  echo "Building frontend..."
-  (cd frontend && npm run build)
-  FRONTEND_URL="http://127.0.0.1:${BACKEND_PORT}/"
-  echo "Serving on ${FRONTEND_URL}"
-  echo "Token hint: ${TOKEN_HINT}  (full token: ${TOKEN_FILE})"
-  echo "Opening browser to sign in…"
-  open_browser "http://127.0.0.1:${BACKEND_PORT}/?token=${TOKEN}"
-  exec uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$BACKEND_PORT"
-fi
-
-FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}/"
-echo "Backend  http://127.0.0.1:${BACKEND_PORT}/api/health"
-echo "Frontend ${FRONTEND_URL}"
-echo "Token hint: ${TOKEN_HINT}  (full token: ${TOKEN_FILE})"
-echo "Opening browser to sign in…"
-
-open_browser "http://127.0.0.1:${FRONTEND_PORT}/?token=${TOKEN}"
 
 uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$BACKEND_PORT" --reload &
 BACKEND_PID=$!

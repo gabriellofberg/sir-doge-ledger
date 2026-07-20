@@ -5,13 +5,32 @@ from typing import Any
 from ..db import get_db, now_iso, rows_to_dicts
 
 
-def list_items() -> list[dict[str, Any]]:
+def list_items(sort: str = "due") -> list[dict[str, Any]]:
+    order = {
+        "due": "CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC",
+        "title": "title ASC",
+        "kind": "kind ASC, title ASC",
+    }.get(sort, "due_date ASC")
     with get_db() as conn:
-        return rows_to_dicts(
-            conn.execute(
-                "SELECT * FROM life_items ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC"
-            ).fetchall()
+        return rows_to_dicts(conn.execute(f"SELECT * FROM life_items ORDER BY {order}").fetchall())
+
+
+def export_ics() -> str:
+    items = [i for i in list_items() if i.get("due_date")]
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SirDoge Ledger//EN"]
+    for item in items:
+        due = item["due_date"].replace("-", "")
+        lines.extend(
+            [
+                "BEGIN:VEVENT",
+                f"UID:sir-doge-life-{item['id']}@local",
+                f"DTSTART;VALUE=DATE:{due}",
+                f"SUMMARY:{item['title']} ({item['kind']})",
+                "END:VEVENT",
+            ]
         )
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(lines) + "\r\n"
 
 
 def create_item(

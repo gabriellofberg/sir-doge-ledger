@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useI18n } from "../i18n";
 
 const KEY = "sir-doge-privacy-ack";
 
 export default function PrivacyBanner() {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -14,9 +16,7 @@ export default function PrivacyBanner() {
   return (
     <div className="privacy-banner" role="alert">
       <div>
-        <strong>SirDoge Ledger runs entirely on this machine.</strong> Bank exports and
-        categories are stored locally under your user profile. Lock your computer when away.
-        Nothing is sent to the cloud.
+        <strong>{t.appName}.</strong> {t.privacy.body}
       </div>
       <button
         type="button"
@@ -25,7 +25,7 @@ export default function PrivacyBanner() {
           setVisible(false);
         }}
       >
-        Understood
+        {t.privacy.ok}
       </button>
     </div>
   );

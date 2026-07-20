@@ -1,7 +1,11 @@
 import { useState } from "react";
+import { useAuth } from "../auth";
 import { dataApi } from "../api";
+import { useI18n, tr } from "../i18n";
 
 export default function DataPage() {
+  const { refresh } = useAuth();
+  const { t } = useI18n();
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -13,9 +17,9 @@ export default function DataPage() {
     setMessage(null);
     try {
       await dataApi.downloadExport(kind);
-      setMessage(kind === "csv" ? "Transactions CSV downloaded." : "Full backup JSON downloaded.");
+      setMessage(kind === "csv" ? t.data.csvOk : t.data.jsonOk);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Export failed");
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -28,11 +32,9 @@ export default function DataPage() {
     try {
       const result = await dataApi.wipeAll(confirm);
       setConfirm("");
-      setMessage(
-        `All data removed (${result.removed.transactions} transactions). Safe to show a friend — your login token is unchanged.`,
-      );
+      setMessage(tr(t.data.wipeOk, { count: result.removed.transactions }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Wipe failed");
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -43,9 +45,10 @@ export default function DataPage() {
     setError(null);
     try {
       await dataApi.logout();
-      setMessage("Logged out. Restart the app or open the login link again to sign back in.");
+      await refresh();
+      setMessage(t.data.logoutOk);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Logout failed");
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -55,8 +58,8 @@ export default function DataPage() {
     <div className="stack">
       <header className="page-head">
         <div>
-          <h1>Your data</h1>
-          <p className="lede">Export a backup, wipe everything before showing a friend, or log out of this browser.</p>
+          <h1>{t.data.title}</h1>
+          <p className="lede">{t.data.lede}</p>
         </div>
       </header>
 
@@ -64,26 +67,28 @@ export default function DataPage() {
       {error && <p className="banner err">{error}</p>}
 
       <section className="panel">
-        <h2>Export</h2>
-        <p className="muted">Download your data before wiping or for your own records.</p>
+        <h2>{t.data.export}</h2>
+        <p className="muted">{t.data.exportHint}</p>
         <div className="btn-row">
           <button type="button" disabled={busy !== null} onClick={() => handleExport("csv")}>
-            {busy === "csv" ? "Exporting…" : "Download transactions (CSV)"}
+            {busy === "csv" ? t.data.exporting : t.data.csv}
           </button>
-          <button type="button" className="secondary" disabled={busy !== null} onClick={() => handleExport("json")}>
-            {busy === "json" ? "Exporting…" : "Download full backup (JSON)"}
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy !== null}
+            onClick={() => handleExport("json")}
+          >
+            {busy === "json" ? t.data.exporting : t.data.json}
           </button>
         </div>
       </section>
 
       <section className="panel danger-panel">
-        <h2>Wipe all data</h2>
-        <p className="muted">
-          Removes every transaction, import, rule, recurring group, and life item. Your login token stays — use this
-          before demoing SirDoge to someone else.
-        </p>
+        <h2>{t.data.wipe}</h2>
+        <p className="muted">{t.data.wipeHint}</p>
         <label className="field">
-          Type <strong>DELETE</strong> to confirm
+          {t.data.wipeConfirm}
           <input
             type="text"
             value={confirm}
@@ -98,15 +103,15 @@ export default function DataPage() {
           disabled={busy !== null || confirm !== "DELETE"}
           onClick={handleWipe}
         >
-          {busy === "wipe" ? "Wiping…" : "Delete all my data"}
+          {busy === "wipe" ? t.data.wiping : t.data.wipeBtn}
         </button>
       </section>
 
       <section className="panel">
-        <h2>Session</h2>
-        <p className="muted">Clears the login cookie in this browser. Does not delete any data.</p>
+        <h2>{t.data.session}</h2>
+        <p className="muted">{t.data.sessionHint}</p>
         <button type="button" className="secondary" disabled={busy !== null} onClick={handleLogout}>
-          {busy === "logout" ? "Logging out…" : "Log out"}
+          {busy === "logout" ? t.data.loggingOut : t.data.logout}
         </button>
       </section>
     </div>
