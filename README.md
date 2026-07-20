@@ -1,5 +1,9 @@
 # SirDoge Ledger
 
+<p align="center">
+  <img src="docs/sir-doge.png" alt="Sir Doge — private banker" width="420" />
+</p>
+
 **Local finance & life admin. Fancy Doge. No cloud.**
 
 Import bank exports, categorize purchases, review subscriptions as yearly cost, set budgets, and track rent/docs/warranties — all on your machine.
