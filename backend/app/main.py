@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import APP_NAME, APP_VERSION, FRONTEND_DIST, ensure_dirs
 from .db import init_db
-from .routers import life, money
+from .routers import data, life, money
 from .services import auth
 from .services.import_sessions import purge_old_sessions
 
@@ -120,8 +120,16 @@ async def authenticate(request: Request):
     return response
 
 
+@app.post("/api/auth/logout")
+async def logout():
+    response = JSONResponse(content={"status": "ok"})
+    response.delete_cookie(auth.COOKIE_NAME, path="/")
+    return response
+
+
 app.include_router(money.router)
 app.include_router(life.router)
+app.include_router(data.router)
 
 
 if FRONTEND_DIST.is_dir():

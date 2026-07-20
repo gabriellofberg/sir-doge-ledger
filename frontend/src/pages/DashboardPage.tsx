@@ -17,16 +17,7 @@ import {
 } from "recharts";
 import { formatKr, moneyApi, type CashflowMonth, type MoneyStats } from "../api";
 
-const CHART_COLORS = [
-  "#1E3A5F",
-  "#2F855A",
-  "#C53030",
-  "#B8953A",
-  "#4A5568",
-  "#805AD5",
-  "#319795",
-  "#DD6B20",
-];
+const CHART_COLORS = ["#1e3a5f", "#2f855a", "#c53030", "#b8953a", "#4a5568", "#805ad5", "#319795"];
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<MoneyStats | null>(null);
@@ -66,15 +57,15 @@ export default function DashboardPage() {
   );
 
   if (error) return <p className="error">{error}</p>;
-  if (!stats) return <p className="muted">Loading…</p>;
+  if (!stats) return <p className="muted">Loading your ledger…</p>;
 
   return (
     <div className="stack">
-      <section className="hero-panel">
-        <h1>Money overview</h1>
-        <p className="lede">
-          Income vs spending — transfers excluded so your own account moves do not inflate totals.
-        </p>
+      <header className="page-head">
+        <div>
+          <h1>Money overview</h1>
+          <p className="lede">Sir Doge has reviewed the numbers. Transfers excluded from totals.</p>
+        </div>
         <div className="range-toggle">
           {[3, 6, 12].map((m) => (
             <button
@@ -87,7 +78,7 @@ export default function DashboardPage() {
             </button>
           ))}
         </div>
-      </section>
+      </header>
 
       <div className="stat-grid">
         <div className="stat income-stat">
@@ -121,7 +112,7 @@ export default function DashboardPage() {
             {stats.uncategorized_income_count > 0 && (
               <li>
                 <Link to="/transactions?income=1">
-                  {stats.uncategorized_income_count} income rows not marked as Income
+                  {stats.uncategorized_income_count} income rows not marked Income
                 </Link>
               </li>
             )}
@@ -134,67 +125,67 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {barData.length > 0 && (
-        <>
+      {barData.length > 0 ? (
+        <div className="chart-grid">
           <section className="panel chart-panel">
             <h2>Monthly income vs spent</h2>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={260}>
               <BarChart data={barData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e8dcc8" />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: number) => formatKr(v)} />
                 <Legend />
-                <Bar dataKey="Income" fill="#2F855A" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Spent" fill="#C53030" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Income" fill="#2f855a" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="Spent" fill="#c53030" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </section>
 
           <section className="panel chart-panel">
             <h2>Monthly net</h2>
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={260}>
               <LineChart data={barData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e8dcc8" />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: number) => formatKr(v)} />
-                <Line type="monotone" dataKey="Net" stroke="#1E3A5F" strokeWidth={2} dot />
+                <Line type="monotone" dataKey="Net" stroke="#1e3a5f" strokeWidth={2.5} dot />
               </LineChart>
             </ResponsiveContainer>
           </section>
-        </>
-      )}
 
-      {breakdown.length > 0 && (
-        <section className="panel chart-panel">
-          <h2>Spending by category</h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
-              <Pie
-                data={breakdown}
-                dataKey="total"
-                nameKey="category"
-                cx="50%"
-                cy="50%"
-                outerRadius={100}
-                label={({ category, total }: { category: string; total: number }) =>
-                  `${category}: ${formatKr(total)}`
-                }
-              >
-                {breakdown.map((_, i) => (
-                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v: number) => formatKr(v)} />
-            </PieChart>
-          </ResponsiveContainer>
-        </section>
-      )}
-
-      {barData.length === 0 && (
-        <p className="muted">
-          No data yet. <Link to="/import">Import a bank export</Link>.
+          {breakdown.length > 0 && (
+            <section className="panel chart-panel chart-wide">
+              <h2>Spending by category</h2>
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={breakdown}
+                    dataKey="total"
+                    nameKey="category"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={95}
+                    label={({ category, total }: { category: string; total: number }) =>
+                      `${category}: ${formatKr(total)}`
+                    }
+                  >
+                    {breakdown.map((_, i) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => formatKr(v)} />
+                </PieChart>
+              </ResponsiveContainer>
+            </section>
+          )}
+        </div>
+      ) : (
+        <p className="muted empty-state">
+          No transactions yet. <Link to="/import">Import a bank export</Link> and Sir Doge will sort
+          it.
         </p>
       )}
     </div>

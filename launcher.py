@@ -51,10 +51,13 @@ def main() -> int:
     from app.services import auth
 
     token = auth.ensure_token()
+    hint = auth.token_hint(token)
     print("=" * 54)
     print(" SirDoge Ledger")
     print("=" * 54)
-    print(f" Open: http://127.0.0.1:{frontend_port}/?token={token}")
+    print(f" Frontend http://127.0.0.1:{frontend_port}/")
+    print(f" Token hint: {hint}  (full token: {auth.TOKEN_FILE})")
+    print(" Opening browser to sign in…")
     print(" Data stays on this machine only.")
     print("=" * 54)
 

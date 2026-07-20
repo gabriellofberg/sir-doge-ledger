@@ -7,13 +7,14 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from ..config import ensure_dirs
+from ..config import MAX_IMPORT_ROWS, MAX_TRANSACTION_LIMIT, MAX_UPLOAD_BYTES, ensure_dirs
 from ..db import get_db, now_iso, rows_to_dicts
 from .categorize import categorize, ensure_category
 from .import_parse import ColumnMapping, guess_mapping, parse_all_rows, read_tabular
 from .import_sessions import delete_session, get_session_path
 from .normalize import merchant_key, normalize_merchant
 from .recurring import detect_recurring
+from .security_paths import escape_like_pattern
 
 TRANSFER_CAT = "Transfers"
 INCOME_CAT = "Income"
@@ -49,6 +50,8 @@ def commit_import_session(
     delete_upload: bool = True,
 ) -> dict[str, Any]:
     path = get_session_path(session_id)
+    if path.stat().st_size > MAX_UPLOAD_BYTES:
+        raise ValueError(f"File too large (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)")
     rows = parse_all_rows(path, mapping)
     inserted = 0
     skipped = 0
@@ -177,6 +180,8 @@ def list_transactions(
     limit: int = 500,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, MAX_TRANSACTION_LIMIT))
+    offset = max(0, offset)
     clauses: list[str] = []
     params: list[Any] = []
     if needs_review is True:
@@ -316,13 +321,14 @@ def update_transaction_category(
                 (key, category, now_iso()),
             )
             source = "learned"
+            like_key = escape_like_pattern(key)
             conn.execute(
                 """
                 UPDATE transactions
                 SET category = ?, category_source = 'learned', confidence = 0.95, needs_review = 0
-                WHERE normalized_merchant LIKE ? OR normalized_merchant = ?
+                WHERE normalized_merchant LIKE ? ESCAPE '\\' OR normalized_merchant = ?
                 """,
-                (category, f"%{key}%", key),
+                (category, f"%{like_key}%", key),
             )
         conn.execute(
             """

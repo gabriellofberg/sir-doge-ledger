@@ -34,6 +34,19 @@ export PYTHONPATH="${PWD}/backend${PYTHONPATH:+:$PYTHONPATH}"
 
 # Always-on local API token (stricter than HomeSec dev mode)
 TOKEN=$(python -c "from app.services.auth import ensure_token; print(ensure_token())")
+TOKEN_HINT=$(python -c "from app.services.auth import token_hint; print(token_hint('$TOKEN'))")
+TOKEN_FILE=$(python -c "from app.services.auth import TOKEN_FILE; print(TOKEN_FILE)")
+
+open_browser() {
+  local url="$1"
+  python -c "
+import threading, time, webbrowser
+def open_url():
+    time.sleep(2)
+    webbrowser.open('$url')
+threading.Thread(target=open_url, daemon=True).start()
+" &
+}
 
 cleanup() {
   if [ -n "${BACKEND_PID:-}" ]; then
@@ -47,13 +60,21 @@ if [ "$MODE" = "prod" ]; then
   export SIR_DOGE_PROD=1
   echo "Building frontend..."
   (cd frontend && npm run build)
-  echo "Serving on http://127.0.0.1:${BACKEND_PORT}/?token=${TOKEN}"
+  FRONTEND_URL="http://127.0.0.1:${BACKEND_PORT}/"
+  echo "Serving on ${FRONTEND_URL}"
+  echo "Token hint: ${TOKEN_HINT}  (full token: ${TOKEN_FILE})"
+  echo "Opening browser to sign in…"
+  open_browser "http://127.0.0.1:${BACKEND_PORT}/?token=${TOKEN}"
   exec uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$BACKEND_PORT"
 fi
 
+FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}/"
 echo "Backend  http://127.0.0.1:${BACKEND_PORT}/api/health"
-echo "Frontend http://127.0.0.1:${FRONTEND_PORT}/?token=${TOKEN}"
-echo "Open the frontend URL above to authenticate this browser session."
+echo "Frontend ${FRONTEND_URL}"
+echo "Token hint: ${TOKEN_HINT}  (full token: ${TOKEN_FILE})"
+echo "Opening browser to sign in…"
+
+open_browser "http://127.0.0.1:${FRONTEND_PORT}/?token=${TOKEN}"
 
 uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$BACKEND_PORT" --reload &
 BACKEND_PID=$!

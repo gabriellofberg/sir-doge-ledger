@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from ..db import CATEGORIES
+from ..config import MAX_TRANSACTION_LIMIT
 from ..services import money
 from ..services.import_parse import ColumnMapping
 from ..services.import_sessions import save_upload
@@ -108,6 +108,8 @@ def transactions(
     limit: int = 500,
     offset: int = 0,
 ) -> dict[str, Any]:
+    limit = max(1, min(limit, MAX_TRANSACTION_LIMIT))
+    offset = max(0, offset)
     items = money.list_transactions(
         needs_review=needs_review,
         income_review=income_review,

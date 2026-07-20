@@ -175,6 +175,41 @@ export const lifeApi = {
   remove: (id: number) => api<{ status: string }>(`/api/life/items/${id}`, { method: "DELETE" }),
 };
 
+async function download(path: string, filename: string): Promise<void> {
+  const headers = new Headers();
+  headers.set(CSRF_HEADER, "1");
+  const res = await fetch(path, { credentials: "include", headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || res.statusText);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export const dataApi = {
+  downloadExport: (kind: "csv" | "json") =>
+    download(
+      kind === "csv" ? "/api/data/export/transactions.csv" : "/api/data/export/backup.json",
+      kind === "csv" ? "sir-doge-transactions.csv" : "sir-doge-backup.json",
+    ),
+  wipeAll: (confirm: string) =>
+    api<{ status: string; removed: Record<string, number> }>("/api/data/wipe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm }),
+    }),
+  logout: () =>
+    api<{ status: string }>("/api/auth/logout", {
+      method: "POST",
+    }),
+};
+
 export function formatKr(n: number): string {
   return new Intl.NumberFormat("sv-SE", {
     style: "currency",

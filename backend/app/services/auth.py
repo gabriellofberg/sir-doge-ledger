@@ -49,3 +49,11 @@ def token_matches(candidate: str | None) -> bool:
     if not token or not candidate:
         return False
     return secrets.compare_digest(token, candidate.strip())
+
+
+def token_hint(token: str | None = None) -> str:
+    """Last 4 chars only — safe to print in terminal."""
+    value = (token or get_token()).strip()
+    if len(value) <= 4:
+        return "****"
+    return f"…{value[-4:]}"

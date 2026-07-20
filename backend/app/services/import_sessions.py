@@ -9,7 +9,7 @@ from typing import Any
 
 from ..config import UPLOADS_DIR, ensure_dirs, secure_db_file
 from ..db import get_db, now_iso, rows_to_dicts
-from .security_paths import safe_upload_name
+from .security_paths import safe_unlink_upload, safe_upload_name
 
 
 def create_session(filename: str, path: Path) -> str:
@@ -62,10 +62,7 @@ def delete_session(session_id: str, *, remove_file: bool = True) -> None:
             (session_id.strip(),),
         ).fetchone()
         if row and remove_file:
-            try:
-                Path(row["path"]).unlink(missing_ok=True)
-            except OSError:
-                pass
+            safe_unlink_upload(row["path"])
         conn.execute("DELETE FROM pending_imports WHERE session_id = ?", (session_id.strip(),))
 
 
@@ -82,10 +79,7 @@ def purge_old_sessions(max_age_hours: int = 24) -> int:
             (cutoff_iso,),
         ).fetchall()
         for row in rows:
-            try:
-                Path(row["path"]).unlink(missing_ok=True)
-            except OSError:
-                pass
+            safe_unlink_upload(row["path"])
             conn.execute("DELETE FROM pending_imports WHERE session_id = ?", (row["session_id"],))
             removed += 1
     return removed

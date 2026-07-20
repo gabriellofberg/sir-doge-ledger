@@ -3,7 +3,11 @@ import stat
 from pathlib import Path
 
 APP_NAME = "SirDoge Ledger"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_IMPORT_ROWS = 50_000
+MAX_TRANSACTION_LIMIT = 1000
 
 
 def _resolve_user_data_dir() -> Path:
