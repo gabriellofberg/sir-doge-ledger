@@ -70,6 +70,26 @@ def test_wipe_and_export(client):
             """,
             (iid, tx_hash("2026-01-01", -50, "TEST"), now_iso()),
         )
+        conn.execute(
+            """
+            INSERT INTO recurring_price_events
+            (normalized_merchant, old_amount, new_amount, detected_at, acknowledged)
+            VALUES ('SPOTIFY', 99, 109, ?, 0)
+            """,
+            (now_iso(),),
+        )
+        conn.execute(
+            "INSERT INTO budgets (category, monthly_limit, enabled, updated_at) VALUES ('Groceries', 3000, 1, ?)",
+            (now_iso(),),
+        )
+        conn.execute(
+            "INSERT INTO savings_goals (name, target_amount, current_amount, updated_at) VALUES ('Buffer', 10000, 100, ?)",
+            (now_iso(),),
+        )
+        conn.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES ('monthly_income', '40000', ?)",
+            (now_iso(),),
+        )
 
     csv_res = client.get("/api/data/export/transactions.csv")
     assert csv_res.status_code == 200
@@ -81,8 +101,19 @@ def test_wipe_and_export(client):
         json={"confirm": "DELETE"},
     )
     assert wipe_res.status_code == 200
-    assert wipe_res.json()["removed"]["transactions"] == 1
+    removed = wipe_res.json()["removed"]
+    assert removed["transactions"] == 1
+    assert removed["recurring_price_events"] == 1
+    assert removed["budgets"] == 1
+    assert removed["savings_goals"] == 1
+    assert removed["app_settings"] == 1
     assert client.get("/api/money/stats").json()["transaction_count"] == 0
+    assert client.get("/api/money/alerts").json()["price"] == []
+
+    with get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM recurring_price_events").fetchone()["c"] == 0
+        assert conn.execute("SELECT COUNT(*) AS c FROM budgets").fetchone()["c"] == 0
+        assert conn.execute("SELECT COUNT(*) AS c FROM app_settings").fetchone()["c"] == 0
 
 
 def test_escape_like_pattern():

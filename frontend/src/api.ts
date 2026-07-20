@@ -86,6 +86,8 @@ export type Transaction = {
   category_source: string;
   confidence: number;
   needs_review: number;
+  group_key?: string;
+  tags?: string[];
 };
 
 export type RecurringGroup = {
@@ -140,10 +142,14 @@ export const moneyApi = {
   categories: () => api<{ categories: string[] }>("/api/money/categories"),
   summary: () => api<{ by_category: Array<Record<string, number | string>> }>("/api/money/summary"),
   cashflow: (months = 12) => api<{ months: CashflowMonth[] }>(`/api/money/cashflow?months=${months}`),
-  breakdown: (kind: "spent" | "income") =>
-    api<{ categories: Array<{ category: string; total: number; tx_count: number }> }>(
-      `/api/money/breakdown?kind=${kind}`,
-    ),
+  breakdown: (kind: "spent" | "income", opts?: { month?: string; months?: number }) => {
+    const q = new URLSearchParams({ kind });
+    if (opts?.month) q.set("month", opts.month);
+    if (opts?.months != null) q.set("months", String(opts.months));
+    return api<{ categories: Array<{ category: string; total: number; tx_count: number }> }>(
+      `/api/money/breakdown?${q}`,
+    );
+  },
   transactions: (params?: {
     needs_review?: boolean;
     income_review?: boolean;
@@ -196,6 +202,17 @@ export const moneyApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ category, remember, match_text }),
     }),
+  bulkUpdateCategory: (
+    transaction_ids: number[],
+    category: string,
+    remember: boolean,
+    match_text?: string,
+  ) =>
+    api<{ updated: number }>("/api/money/transactions/bulk-category", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transaction_ids, category, remember, match_text }),
+    }),
   recurring: () => api<{ groups: RecurringGroup[] }>("/api/money/recurring"),
   updateRecurring: (id: number, body: Partial<RecurringGroup>) =>
     api<RecurringGroup>(`/api/money/recurring/${id}`, {
@@ -204,7 +221,7 @@ export const moneyApi = {
       body: JSON.stringify(body),
     }),
   rules: () => api<{ rules: Array<Record<string, unknown>> }>("/api/money/rules"),
-  updateRule: (id: number, body: { category?: string; enabled?: boolean }) =>
+  updateRule: (id: number, body: { category?: string; enabled?: boolean; match_text?: string }) =>
     api(`/api/money/rules/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

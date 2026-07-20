@@ -7,11 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import APP_NAME, APP_VERSION, FRONTEND_DIST, ensure_dirs
-from .db import init_db, set_demo_mode
+from .db import get_db, init_db, set_demo_mode
 from .routers import data, life, money, settings
 from .services import auth
 from .services.demo import ensure_demo_db
 from .services.import_sessions import purge_old_sessions
+from .services.money import sanitize_category_rules
 
 CSRF_HEADER = "x-sir-doge"
 _PROTECTED_METHODS = {"POST", "DELETE", "PATCH", "PUT"}
@@ -31,6 +32,8 @@ async def lifespan(_app: FastAPI):
     init_db()
     ensure_demo_db()
     purge_old_sessions()
+    with get_db() as conn:
+        sanitize_category_rules(conn)
     yield
 
 

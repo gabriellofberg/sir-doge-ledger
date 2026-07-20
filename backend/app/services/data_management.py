@@ -1,14 +1,29 @@
-"""Export and wipe user data (keeps API token)."""
+"""Export and wipe user data (keeps password/auth files outside the DB)."""
 
 from __future__ import annotations
 
 import csv
 import io
-import json
 from typing import Any
 
 from ..config import UPLOADS_DIR
 from ..db import get_db, rows_to_dicts
+
+# Every user-data table that a full wipe must clear (auth lives outside SQLite).
+_WIPE_TABLES = (
+    "transaction_tags",
+    "transactions",
+    "imports",
+    "category_rules",
+    "recurring_groups",
+    "recurring_price_events",
+    "life_items",
+    "pending_imports",
+    "bank_profiles",
+    "budgets",
+    "savings_goals",
+    "app_settings",
+)
 
 
 def export_transactions_csv() -> str:
@@ -63,28 +78,25 @@ def export_backup_json() -> dict[str, Any]:
             "recurring_groups": rows_to_dicts(
                 conn.execute("SELECT * FROM recurring_groups ORDER BY id").fetchall()
             ),
+            "recurring_price_events": rows_to_dicts(
+                conn.execute("SELECT * FROM recurring_price_events ORDER BY id").fetchall()
+            ),
             "life_items": rows_to_dicts(conn.execute("SELECT * FROM life_items ORDER BY id").fetchall()),
+            "budgets": rows_to_dicts(conn.execute("SELECT * FROM budgets ORDER BY category").fetchall()),
+            "savings_goals": rows_to_dicts(
+                conn.execute("SELECT * FROM savings_goals ORDER BY id").fetchall()
+            ),
         }
 
 
 def wipe_all_data() -> dict[str, int]:
-    """Remove all financial/life data. API token is kept."""
+    """Remove all financial/life/settings data. Auth files outside the DB are kept."""
     with get_db() as conn:
-        counts = {
-            "transactions": conn.execute("SELECT COUNT(*) AS c FROM transactions").fetchone()["c"],
-            "imports": conn.execute("SELECT COUNT(*) AS c FROM imports").fetchone()["c"],
-            "category_rules": conn.execute("SELECT COUNT(*) AS c FROM category_rules").fetchone()["c"],
-            "recurring_groups": conn.execute("SELECT COUNT(*) AS c FROM recurring_groups").fetchone()["c"],
-            "life_items": conn.execute("SELECT COUNT(*) AS c FROM life_items").fetchone()["c"],
-            "pending_imports": conn.execute("SELECT COUNT(*) AS c FROM pending_imports").fetchone()["c"],
-        }
-        conn.execute("DELETE FROM transactions")
-        conn.execute("DELETE FROM imports")
-        conn.execute("DELETE FROM category_rules")
-        conn.execute("DELETE FROM recurring_groups")
-        conn.execute("DELETE FROM life_items")
-        conn.execute("DELETE FROM pending_imports")
-        conn.execute("DELETE FROM bank_profiles")
+        counts: dict[str, int] = {}
+        for table in _WIPE_TABLES:
+            counts[table] = conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"]
+        for table in _WIPE_TABLES:
+            conn.execute(f"DELETE FROM {table}")
 
     removed_uploads = 0
     if UPLOADS_DIR.is_dir():

@@ -8,9 +8,7 @@ from pydantic import BaseModel
 
 from ..config import MAX_TRANSACTION_LIMIT, SAMPLE_DATA_DIR
 from ..db import CATEGORIES
-from ..services import money
-from ..services import budgets as budget_svc
-from ..services import recommendations as reco_svc
+from ..services import budgets as budget_svc, money, recommendations as reco_svc
 from ..services.import_parse import ColumnMapping
 from ..services.import_sessions import save_upload
 
@@ -52,6 +50,7 @@ class BulkCategoryUpdate(BaseModel):
     transaction_ids: list[int]
     category: str
     remember: bool = False
+    match_text: str | None = None
 
 
 class BankProfileIn(BaseModel):
@@ -99,10 +98,23 @@ def cashflow(months: int = 12) -> dict[str, Any]:
 
 
 @router.get("/breakdown")
-def breakdown(kind: str = "spent") -> dict[str, Any]:
+def breakdown(
+    kind: str = "spent",
+    month: str | None = None,
+    months: int | None = None,
+) -> dict[str, Any]:
     if kind not in {"spent", "income"}:
         raise HTTPException(400, "kind must be spent or income")
-    return {"kind": kind, "categories": money.breakdown(kind)}
+    if month is not None and (len(month) != 7 or month[4] != "-"):
+        raise HTTPException(400, "month must be YYYY-MM")
+    if months is not None:
+        months = max(1, min(months, 36))
+    return {
+        "kind": kind,
+        "month": month,
+        "months": months,
+        "categories": money.breakdown(kind, month=month, months=months),
+    }
 
 
 @router.post("/preview")
@@ -197,7 +209,14 @@ def patch_transaction(tx_id: int, body: TransactionPatch) -> dict[str, Any]:
 
 @router.post("/transactions/bulk-category")
 def bulk_category(body: BulkCategoryUpdate) -> dict[str, Any]:
-    return {"updated": money.bulk_update_category(body.transaction_ids, body.category, body.remember)}
+    return {
+        "updated": money.bulk_update_category(
+            body.transaction_ids,
+            body.category,
+            body.remember,
+            match_text=body.match_text,
+        )
+    }
 
 
 @router.get("/imports")
@@ -306,6 +325,13 @@ def remove_rule(rule_id: int) -> dict[str, str]:
 @router.patch("/rules/{rule_id}")
 def patch_rule(rule_id: int, body: dict[str, Any]) -> dict[str, Any]:
     try:
-        return money.update_rule(rule_id, category=body.get("category"), enabled=body.get("enabled"))
+        return money.update_rule(
+            rule_id,
+            category=body.get("category"),
+            enabled=body.get("enabled"),
+            match_text=body.get("match_text"),
+        )
     except KeyError:
         raise HTTPException(404, "Not found") from None
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc

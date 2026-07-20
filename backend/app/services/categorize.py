@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from ..db import CATEGORIES
-from .normalize import merchant_key, normalize_merchant
+from .normalize import phrase_matches
 
 # (category, keywords) — first strong match wins among builtins; learned rules override.
+# Keywords are matched as whole token sequences (not raw substrings).
 _BUILTIN: list[tuple[str, list[str]]] = [
     (
         "Housing",
@@ -45,13 +45,14 @@ _BUILTIN: list[tuple[str, list[str]]] = [
     (
         "Transport",
         [
-            " SL",
-            "SL ",
+            "SL",
             "SLKORT",
             "SL ACCESS",
-            "UL ",
+            "UL",
             "SKANETRAFIKEN",
             "SKÅNETRAFIKEN",
+            "VASTTRAFIK",
+            "VÄSTTRAFIK",
             "UBER",
             "BOLT",
             "TAXI",
@@ -60,9 +61,11 @@ _BUILTIN: list[tuple[str, list[str]]] = [
             "OKQ8",
             "SHELL",
             "INGO",
+            "SJ",
             "SJ AB",
             "MTRX",
             "FLIXBUS",
+            "DSB",
             "PARKERING",
             "EASYPARK",
         ],
@@ -121,7 +124,7 @@ _BUILTIN: list[tuple[str, list[str]]] = [
         [
             "AMAZON",
             "ZALANDO",
-            "HM ",
+            "HM",
             "H&M",
             "IKEA",
             "ELGIGANTEN",
@@ -154,7 +157,7 @@ _BUILTIN: list[tuple[str, list[str]]] = [
         "Income",
         [
             "LÖN",
-            "LON ",
+            "LON",
             "SALARY",
             "UTBETALNING",
             "SKATTEVERKET",
@@ -172,6 +175,7 @@ _BUILTIN: list[tuple[str, list[str]]] = [
             "SPARA",
             "AVANZA",
             "NORDNET",
+            "SWISH",
             "SWISH TILL",
         ],
     ),
@@ -209,12 +213,8 @@ def categorize(
     learned_rules: list[tuple[str, str]],
 ) -> CategoryResult:
     """Return category attempt. learned_rules: list of (match_text, category)."""
-    norm = normalize_merchant(description)
-    key = merchant_key(description)
-
     for match_text, category in learned_rules:
-        mt = match_text.upper().strip()
-        if mt and (mt in norm or norm.startswith(mt) or key == mt):
+        if phrase_matches(match_text, description):
             return CategoryResult(category, "learned", _HIGH, False)
 
     if amount > 0:
@@ -223,17 +223,20 @@ def categorize(
             if cat != "Income":
                 continue
             for w in words:
-                if w.strip() in norm:
+                if phrase_matches(w, description):
                     return CategoryResult("Income", "auto", _HIGH, False)
 
     best: CategoryResult | None = None
     for category, words in _BUILTIN:
         for w in words:
-            token = w.strip().upper()
+            token = w.strip()
             if not token:
                 continue
-            if token in norm:
-                conf = _HIGH if len(token) >= 5 else _MED
+            if phrase_matches(token, description):
+                conf = _HIGH if len(token.replace(" ", "")) >= 5 else _MED
+                # Short transit brands (SJ, SL) are still reliable as whole tokens
+                if category == "Transport" and len(token) <= 3:
+                    conf = _HIGH
                 candidate = CategoryResult(category, "auto", conf, conf < _UNCLEAR_THRESHOLD)
                 if best is None or candidate.confidence > best.confidence:
                     best = candidate

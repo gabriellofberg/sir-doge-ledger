@@ -38,17 +38,20 @@ export default function DashboardPage() {
   const { t, cat } = useI18n();
   const [stats, setStats] = useState<MoneyStats | null>(null);
   const [cashflow, setCashflow] = useState<CashflowMonth[]>([]);
-  const [breakdown, setBreakdown] = useState<Array<{ category: string; total: number }>>([]);
+  const [breakdown, setBreakdown] = useState<Array<{ category: string; total: number; tx_count?: number }>>([]);
   const [months, setMonths] = useState(12);
+  const [categoryMonth, setCategoryMonth] = useState<string>(""); // "" = whole selected range
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
     setLoading(true);
+    // Reset month pick when range changes if the month falls outside the new cashflow
+    setCategoryMonth("");
     Promise.all([
       moneyApi.completeness(),
       moneyApi.cashflow(months),
-      moneyApi.breakdown("spent"),
+      moneyApi.breakdown("spent", { months }),
       moneyApi.alerts(),
     ])
       .then(([s, cf, bd, al]) => {
@@ -58,12 +61,27 @@ export default function DashboardPage() {
           bd.categories.map((c) => ({
             category: c.category,
             total: Math.abs(Number(c.total)),
+            tx_count: c.tx_count,
           })),
         );
         setAlerts([...al.budget, ...al.price, ...al.recommendations]);
       })
       .finally(() => setLoading(false));
   }, [months]);
+
+  useEffect(() => {
+    if (loading) return;
+    const opts = categoryMonth ? { month: categoryMonth } : { months };
+    moneyApi.breakdown("spent", opts).then((bd) => {
+      setBreakdown(
+        bd.categories.map((c) => ({
+          category: c.category,
+          total: Math.abs(Number(c.total)),
+          tx_count: c.tx_count,
+        })),
+      );
+    });
+  }, [categoryMonth]);
 
   const barData = useMemo(
     () =>
@@ -74,6 +92,23 @@ export default function DashboardPage() {
         [t.overview.net]: m.net,
       })),
     [cashflow, t],
+  );
+
+  const categoryTotal = useMemo(
+    () => breakdown.reduce((sum, b) => sum + b.total, 0),
+    [breakdown],
+  );
+
+  const pieData = useMemo(
+    () =>
+      [...breakdown]
+        .sort((a, b) => b.total - a.total)
+        .map((b) => ({
+          ...b,
+          label: cat(b.category),
+          pct: categoryTotal > 0 ? Math.round((b.total / categoryTotal) * 100) : 0,
+        })),
+    [breakdown, cat, categoryTotal],
   );
 
   const display = stats ?? EMPTY_STATS;
@@ -239,30 +274,68 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </section>
 
-          {breakdown.length > 0 && (
+          {pieData.length > 0 && (
             <section className="panel chart-panel chart-wide">
-              <h2>{t.overview.chartCategory}</h2>
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie
-                    data={breakdown.map((b) => ({ ...b, category: cat(b.category) }))}
-                    dataKey="total"
-                    nameKey="category"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={95}
-                    label={({ category, total }: { category: string; total: number }) =>
-                      `${category}: ${formatKr(total)}`
-                    }
+              <div className="chart-panel-head">
+                <h2>{t.overview.chartCategory}</h2>
+                <label className="category-month-picker">
+                  <span className="label">{t.overview.chartCategoryMonth}</span>
+                  <select
+                    value={categoryMonth}
+                    onChange={(e) => setCategoryMonth(e.target.value)}
                   >
-                    {breakdown.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    <option value="">{t.overview.chartCategoryAll} ({months} {t.overview.months})</option>
+                    {[...cashflow].reverse().map((m) => (
+                      <option key={m.month} value={m.month}>
+                        {m.month}
+                      </option>
                     ))}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => formatKr(v)} />
-                </PieChart>
-              </ResponsiveContainer>
+                  </select>
+                </label>
+              </div>
+              <div className="category-breakdown">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="total"
+                      nameKey="label"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={1}
+                    >
+                      {pieData.map((_, i) => (
+                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: number, _n, item) => {
+                        const pct = (item?.payload as { pct?: number })?.pct;
+                        return [`${formatKr(v)}${pct != null ? ` (${pct}%)` : ""}`, ""];
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <ul className="category-legend">
+                  <li className="category-legend-total">
+                    <span>{t.overview.chartCategoryTotal}</span>
+                    <strong>{formatKr(categoryTotal)}</strong>
+                  </li>
+                  {pieData.map((b, i) => (
+                    <li key={b.category}>
+                      <span
+                        className="swatch"
+                        style={{ background: CHART_COLORS[i % CHART_COLORS.length] }}
+                      />
+                      <span className="cat-name">{b.label}</span>
+                      <span className="cat-pct">{b.pct}%</span>
+                      <strong>{formatKr(b.total)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </section>
           )}
         </div>

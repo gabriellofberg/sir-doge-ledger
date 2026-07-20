@@ -7,14 +7,13 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from ..config import MAX_IMPORT_ROWS, MAX_TRANSACTION_LIMIT, MAX_UPLOAD_BYTES, ensure_dirs
+from ..config import MAX_TRANSACTION_LIMIT, MAX_UPLOAD_BYTES
 from ..db import get_db, now_iso, rows_to_dicts
 from .categorize import categorize, ensure_category
 from .import_parse import ColumnMapping, guess_mapping, parse_all_rows, read_tabular
 from .import_sessions import delete_session, get_session_path
-from .normalize import merchant_key, normalize_merchant
+from .normalize import clean_match_text, group_key, merchant_key, normalize_merchant, phrase_matches
 from .recurring import detect_recurring
-from .security_paths import escape_like_pattern
 
 TRANSFER_CAT = "Transfers"
 INCOME_CAT = "Income"
@@ -30,6 +29,78 @@ def list_learned_rules(conn) -> list[tuple[str, str]]:
         "SELECT match_text, category FROM category_rules WHERE enabled = 1 ORDER BY length(match_text) DESC"
     ).fetchall()
     return [(r["match_text"], r["category"]) for r in rows]
+
+
+def apply_rule_to_existing(conn, match_text: str, category: str) -> int:
+    """Recategorize existing transactions whose description matches the rule phrase."""
+    category = ensure_category(category)
+    rows = conn.execute(
+        "SELECT id, raw_description FROM transactions WHERE category_source != 'manual_once'"
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        if not phrase_matches(match_text, row["raw_description"]):
+            continue
+        conn.execute(
+            """
+            UPDATE transactions
+            SET category = ?, category_source = 'learned', confidence = 0.95, needs_review = 0
+            WHERE id = ?
+            """,
+            (category, row["id"]),
+        )
+        updated += 1
+    return updated
+
+
+def reapply_all_learned_rules(conn) -> int:
+    """Apply enabled rules (longest match first) to all non-manual transactions."""
+    rules = list_learned_rules(conn)
+    if not rules:
+        return 0
+    rows = conn.execute(
+        "SELECT id, raw_description FROM transactions WHERE category_source != 'manual_once'"
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        for match_text, category in rules:
+            if phrase_matches(match_text, row["raw_description"]):
+                conn.execute(
+                    """
+                    UPDATE transactions
+                    SET category = ?, category_source = 'learned', confidence = 0.95, needs_review = 0
+                    WHERE id = ?
+                    """,
+                    (ensure_category(category), row["id"]),
+                )
+                updated += 1
+                break
+    return updated
+
+
+def sanitize_category_rules(conn) -> int:
+    """Strip date/ref prefixes from stored match_text and re-apply enabled rules."""
+    rows = conn.execute("SELECT id, match_text, category, enabled FROM category_rules").fetchall()
+    changed = 0
+    for row in rows:
+        cleaned = clean_match_text(row["match_text"])
+        if not cleaned or cleaned == row["match_text"]:
+            continue
+        conflict = conn.execute(
+            "SELECT id FROM category_rules WHERE match_text = ? AND id != ?",
+            (cleaned, row["id"]),
+        ).fetchone()
+        if conflict:
+            # Prefer keeping the cleaned key; drop the dated duplicate
+            conn.execute("DELETE FROM category_rules WHERE id = ?", (row["id"],))
+        else:
+            conn.execute(
+                "UPDATE category_rules SET match_text = ? WHERE id = ?",
+                (cleaned, row["id"]),
+            )
+        changed += 1
+    reapply_all_learned_rules(conn)
+    return changed
 
 
 def preview_file(path: Path) -> dict[str, Any]:
@@ -127,12 +198,15 @@ def _refresh_recurring(conn) -> None:
         ).fetchall()
     )
     candidates = detect_recurring(txs)
+    existing_rows = list(conn.execute("SELECT * FROM recurring_groups").fetchall())
     existing = {
         (r["normalized_merchant"], r["cadence"], round(r["typical_amount"], 2)): r
-        for r in conn.execute("SELECT * FROM recurring_groups").fetchall()
+        for r in existing_rows
     }
+    seen_keys: set[tuple[str, str, float]] = set()
     for c in candidates:
         key = (c.normalized_merchant, c.cadence, round(c.typical_amount, 2))
+        seen_keys.add(key)
         prev = existing.get(key)
         if prev:
             conn.execute(
@@ -162,6 +236,11 @@ def _refresh_recurring(conn) -> None:
                     now_iso(),
                 ),
             )
+    # Drop stale detections (e.g. two same-week Pressbyrån purchases)
+    for r in existing_rows:
+        key = (r["normalized_merchant"], r["cadence"], round(r["typical_amount"], 2))
+        if key not in seen_keys:
+            conn.execute("DELETE FROM recurring_groups WHERE id = ?", (r["id"],))
 
 
 def _date_cutoff(months: int) -> str:
@@ -229,6 +308,7 @@ def list_transactions(
         for row in out:
             raw = row.pop("tags_csv", None) or ""
             row["tags"] = [t.strip() for t in raw.split(",") if t.strip()]
+            row["group_key"] = group_key(row.get("raw_description") or "")
         return out
 
 
@@ -283,25 +363,39 @@ def cashflow(months: int = 12) -> list[dict[str, Any]]:
     return out
 
 
-def breakdown(kind: str = "spent") -> list[dict[str, Any]]:
+def breakdown(
+    kind: str = "spent",
+    *,
+    month: str | None = None,
+    months: int | None = None,
+) -> list[dict[str, Any]]:
+    clauses: list[str] = []
+    params: list[Any] = [TRANSFER_CAT]
     if kind == "income":
-        sql = """
-            SELECT category, ROUND(SUM(amount), 2) AS total, COUNT(*) AS tx_count
-            FROM transactions
-            WHERE amount > 0 AND category NOT IN (?, 'Unclear')
-            GROUP BY category
-            ORDER BY total DESC
-        """
+        clauses.append("amount > 0 AND category NOT IN (?, 'Unclear')")
+        order = "total DESC"
     else:
-        sql = """
-            SELECT category, ROUND(SUM(amount), 2) AS total, COUNT(*) AS tx_count
-            FROM transactions
-            WHERE amount < 0 AND category NOT IN (?, 'Unclear')
-            GROUP BY category
-            ORDER BY total ASC
-        """
+        clauses.append("amount < 0 AND category NOT IN (?, 'Unclear')")
+        order = "total ASC"
+
+    if month:
+        # YYYY-MM
+        clauses.append("substr(tx_date, 1, 7) = ?")
+        params.append(month)
+    elif months is not None:
+        clauses.append("tx_date >= ?")
+        params.append(_date_cutoff(max(1, min(int(months), 36))))
+
+    where = " AND ".join(clauses)
+    sql = f"""
+        SELECT category, ROUND(SUM(amount), 2) AS total, COUNT(*) AS tx_count
+        FROM transactions
+        WHERE {where}
+        GROUP BY category
+        ORDER BY {order}
+    """
     with get_db() as conn:
-        return rows_to_dicts(conn.execute(sql, (TRANSFER_CAT,)).fetchall())
+        return rows_to_dicts(conn.execute(sql, params).fetchall())
 
 
 def completeness() -> dict[str, Any]:
@@ -336,7 +430,9 @@ def update_transaction_category(
             raise KeyError("transaction not found")
         source = "manual_once"
         if remember:
-            key = (match_text or merchant_key(row["raw_description"])).upper().strip()
+            key = clean_match_text(match_text or merchant_key(row["raw_description"]))
+            if not key:
+                key = merchant_key(row["raw_description"])
             conn.execute(
                 """
                 INSERT INTO category_rules (match_text, category, enabled, created_at)
@@ -346,15 +442,7 @@ def update_transaction_category(
                 (key, category, now_iso()),
             )
             source = "learned"
-            like_key = escape_like_pattern(key)
-            conn.execute(
-                """
-                UPDATE transactions
-                SET category = ?, category_source = 'learned', confidence = 0.95, needs_review = 0
-                WHERE normalized_merchant LIKE ? ESCAPE '\\' OR normalized_merchant = ?
-                """,
-                (category, f"%{like_key}%", key),
-            )
+            apply_rule_to_existing(conn, key, category)
         conn.execute(
             """
             UPDATE transactions
@@ -545,12 +633,50 @@ def create_manual_transaction(
         return out
 
 
-def bulk_update_category(ids: list[int], category: str, remember: bool) -> int:
+def bulk_update_category(
+    ids: list[int],
+    category: str,
+    remember: bool,
+    match_text: str | None = None,
+) -> int:
     category = ensure_category(category)
+    if not ids:
+        return 0
+    if remember:
+        with get_db() as conn:
+            key = clean_match_text(match_text) if match_text else ""
+            if not key:
+                row = conn.execute(
+                    "SELECT raw_description FROM transactions WHERE id = ?", (ids[0],)
+                ).fetchone()
+                if row:
+                    key = clean_match_text(merchant_key(row["raw_description"]))
+            if key:
+                conn.execute(
+                    """
+                    INSERT INTO category_rules (match_text, category, enabled, created_at)
+                    VALUES (?, ?, 1, ?)
+                    ON CONFLICT(match_text) DO UPDATE SET category = excluded.category, enabled = 1
+                    """,
+                    (key, category, now_iso()),
+                )
+                apply_rule_to_existing(conn, key, category)
+            updated = 0
+            for tx_id in ids:
+                cur = conn.execute(
+                    """
+                    UPDATE transactions
+                    SET category = ?, category_source = 'learned', confidence = 1.0, needs_review = 0
+                    WHERE id = ?
+                    """,
+                    (category, tx_id),
+                )
+                updated += cur.rowcount
+            return updated
     updated = 0
     for tx_id in ids:
         try:
-            update_transaction_category(tx_id, category, remember=remember)
+            update_transaction_category(tx_id, category, remember=False)
             updated += 1
         except KeyError:
             continue
@@ -596,17 +722,35 @@ def delete_bank_profile(profile_id: int) -> None:
         conn.execute("DELETE FROM bank_profiles WHERE id = ?", (profile_id,))
 
 
-def update_rule(rule_id: int, *, category: str | None = None, enabled: bool | None = None) -> dict[str, Any]:
+def update_rule(
+    rule_id: int,
+    *,
+    category: str | None = None,
+    enabled: bool | None = None,
+    match_text: str | None = None,
+) -> dict[str, Any]:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM category_rules WHERE id = ?", (rule_id,)).fetchone()
         if not row:
             raise KeyError("not found")
         cat = ensure_category(category) if category else row["category"]
         en = row["enabled"] if enabled is None else (1 if enabled else 0)
+        key = clean_match_text(match_text) if match_text is not None else row["match_text"]
+        if not key:
+            raise ValueError("match_text cannot be empty")
+        if key != row["match_text"]:
+            conflict = conn.execute(
+                "SELECT id FROM category_rules WHERE match_text = ? AND id != ?",
+                (key, rule_id),
+            ).fetchone()
+            if conflict:
+                raise ValueError("A rule with that match text already exists")
         conn.execute(
-            "UPDATE category_rules SET category = ?, enabled = ? WHERE id = ?",
-            (cat, en, rule_id),
+            "UPDATE category_rules SET match_text = ?, category = ?, enabled = ? WHERE id = ?",
+            (key, cat, en, rule_id),
         )
+        if en:
+            apply_rule_to_existing(conn, key, cat)
         return dict(conn.execute("SELECT * FROM category_rules WHERE id = ?", (rule_id,)).fetchone())
 
 
