@@ -1,10 +1,11 @@
-import pytest
 from pathlib import Path
 
+import pytest
+
 from app.services.import_parse import ColumnMapping
+from app.services.import_sessions import save_upload
 from app.services.money import cashflow, commit_import_session, tx_hash
 from app.services.security_paths import resolve_upload_path
-from app.services.import_sessions import save_upload
 
 
 def test_tx_hash_stable():
@@ -74,6 +75,7 @@ def test_resolve_upload_rejects_traversal(tmp_path):
 
 def test_auth_required():
     from fastapi.testclient import TestClient
+
     from app.main import app
 
     c = TestClient(app)
@@ -83,6 +85,7 @@ def test_auth_required():
 
 def test_auth_with_token():
     from fastapi.testclient import TestClient
+
     from app.main import app
 
     c = TestClient(app)

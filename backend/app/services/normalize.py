@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import unicodedata
 
-
 _NOISE = re.compile(
     r"\b(AB|AKTIEBOLAG|KORTK[ÖO]P|CARD\s*PURCHASE|BETALNING|AUTOGIRO|SWISH|"
     r"KLARNA|PAYPAL|SUMUP|IZETTLE|VISA|MASTERCARD|DEBIT|CREDIT)\b",

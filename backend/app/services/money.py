@@ -7,7 +7,6 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from ..config import ensure_dirs
 from ..db import get_db, now_iso, rows_to_dicts
 from .categorize import categorize, ensure_category
 from .import_parse import ColumnMapping, guess_mapping, parse_all_rows, read_tabular
