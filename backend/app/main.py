@@ -101,7 +101,6 @@ def health():
 
 class SetupBody(BaseModel):
     password: str
-    enable_encryption: bool = False
 
 
 class LoginBody(BaseModel):
@@ -134,11 +133,11 @@ def auth_setup(body: SetupBody):
     if not auth.needs_setup():
         raise HTTPException(400, "Already set up")
     try:
-        result = auth.setup_password(body.password, enable_encryption=body.enable_encryption)
+        result = auth.setup_password(body.password)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     response = JSONResponse(
-        content={"status": "ok", "recovery_key": result["recovery_key"], "encryption": body.enable_encryption}
+        content={"status": "ok", "recovery_key": result["recovery_key"]}
     )
     _set_session_cookie(response, result["session"])
     return response

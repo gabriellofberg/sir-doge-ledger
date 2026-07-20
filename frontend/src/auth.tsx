@@ -16,7 +16,7 @@ type AuthContextValue = {
   status: AuthStatus;
   mode: AuthMode;
   login: (password: string) => Promise<boolean>;
-  setup: (password: string, enableEncryption?: boolean) => Promise<{ recovery_key?: string } | null>;
+  setup: (password: string) => Promise<{ recovery_key?: string } | null>;
   demo: () => Promise<boolean>;
   recover: (recoveryKey: string, newPassword: string) => Promise<boolean>;
   refresh: () => Promise<void>;
@@ -60,8 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const setup = useCallback(
-    async (password: string, enableEncryption = false) => {
-      const res = await authApi.setup(password, enableEncryption);
+    async (password: string) => {
+      const res = await authApi.setup(password);
       if (!res) return null;
       setMode("normal");
       await refresh();

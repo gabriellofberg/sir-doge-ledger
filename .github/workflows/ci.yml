@@ -23,7 +23,9 @@ jobs:
           SIR_DOGE_DATA_DIR: /tmp/sir-doge-test
           SIR_DOGE_TOKEN: ci-test-token
       - name: Vulnerability scan (pip-audit)
-        run: pip-audit -r backend/requirements.txt
+        run: |
+          pip-audit -r backend/requirements.txt
+          pip-audit -r backend/requirements-dev.txt
 
   frontend:
     runs-on: ubuntu-latest

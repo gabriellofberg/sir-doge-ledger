@@ -60,17 +60,19 @@ def auth_status() -> dict[str, Any]:
     }
 
 
-def setup_password(password: str, *, enable_encryption: bool = False) -> dict[str, str]:
+def setup_password(password: str) -> dict[str, str]:
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters")
     recovery_key = secrets.token_urlsafe(16)
     password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     recovery_hash = bcrypt.hashpw(recovery_key.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    # encryption_enabled is retained for backward-compatible status payloads only;
+    # at-rest DB encryption is not implemented (do not advertise it as available).
     _write_auth_file(
         {
             "password_hash": password_hash,
             "recovery_hash": recovery_hash,
-            "encryption_enabled": enable_encryption,
+            "encryption_enabled": False,
         }
     )
     RECOVERY_HINT_FILE.write_text(

@@ -27,12 +27,12 @@ export const authApi = {
     });
     return res.ok;
   },
-  setup: async (password: string, enableEncryption = false) => {
+  setup: async (password: string) => {
     const res = await fetch("/api/auth/setup", {
       method: "POST",
       headers: { ...MUTATION_HEADERS, "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ password, enable_encryption: enableEncryption }),
+      body: JSON.stringify({ password }),
     });
     if (!res.ok) return null;
     return res.json() as Promise<{ recovery_key: string }>;
