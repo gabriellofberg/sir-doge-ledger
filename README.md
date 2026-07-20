@@ -2,28 +2,38 @@
 
 **Local finance & life admin. Fancy Doge. No cloud.**
 
-Import bank exports, categorize every purchase, review recurrings with yearly costs, and track rent/docs/warranties — all on your machine.
+Import bank exports, categorize purchases, review subscriptions as yearly cost, set budgets, and track rent/docs/warranties — all on your machine.
 
-GitHub repo name: **`sir-doge-ledger`**
+Version: **0.4** · Repo: [`sir-doge-ledger`](https://github.com/gabriellofberg/sir-doge-ledger)
 
 ## Features
 
-- Bank CSV/Excel import with column mapping
-- Auto-categorize purchases + unclear review queue
-- Learn categories (once vs always)
-- Recurring detection with kr/year review
-- **Income vs spent charts** + net + category breakdown
-- Life admin reminders (rent, warranties, expiry)
-- **Always-on local API token** + CSRF protection (stricter than HomeSec dev mode)
-- Opaque import sessions — raw file paths never sent to browser
+- **Bank import** — CSV/Excel with column mapping; optional sample CSV for demos
+- **Auto-categorize** + unclear review queue; learn rules (once vs always)
+- **Rules page** — view, edit, or disable learned category rules
+- **Recurring detection** — kr/year review, cancel-by date, price-change alerts
+- **Overview charts** — income vs spent, net, category breakdown + spending insights
+- **Budgets & recommendations** — optional per-category limits; % of income tips when income is set
+- **Life admin** — rent, warranties, expiry reminders; calendar export (`.ics`)
+- **Your data** — CSV/JSON export, wipe-all (for demos), log out
+- **Demo mode** — separate demo database from the login screen (real data untouched)
+- **Swedish / English** — 🇸🇪 / 🇺🇸 toggle for the full UI
+- **Light / dark theme** — deep charcoal dark mode (Settings)
 
 ## Security
 
+| Mode | How you sign in |
+|------|-----------------|
+| **Dev** (`./run.sh`) | Open — no password (`SIR_DOGE_DEV=1`) |
+| **Prod** (`./run.sh prod`) | Password on first visit; recovery key saved locally |
+
 - Binds to **127.0.0.1** only
-- API token generated on start; browser exchanges `?token=` for HttpOnly cookie
+- Session cookie (HttpOnly, SameSite=strict) after login
 - Mutating requests require `X-Sir-Doge` header (CSRF)
-- Bank uploads stored with mode `0600`; deleted after import by default
+- Bank uploads mode `0600`; deleted after import by default
 - Data directory: `~/.local/share/sir-doge-ledger/` (mode `0700`)
+- Recovery key (prod): `~/.local/share/sir-doge-ledger/recovery-hint.txt`
+- Dev password reset: delete `auth.json` in the data folder, or use the recovery key
 
 **Sibling app:** [HomeSec Scanner](../homesec-scanner) — hacker Doge guards your network; SirDoge retired into finance.
 
@@ -37,26 +47,39 @@ GitHub repo name: **`sir-doge-ledger`**
 ```bash
 cd ~/Projects/sir-doge-ledger
 chmod +x run.sh
-./run.sh
+./run.sh          # development (open auth + Vite)
+./run.sh prod     # production build (password required)
 ```
-
-Open the **frontend URL printed with `?token=...`** — required to authenticate your browser.
 
 | Mode | URL |
 |------|-----|
-| Dev frontend | http://127.0.0.1:5173/?token=... |
-| API health | http://127.0.0.1:8000/api/health |
+| Dev frontend | http://127.0.0.1:5173/ |
+| Prod / API | http://127.0.0.1:8000/ |
+| Health | http://127.0.0.1:8000/api/health |
 
 Data: `~/.local/share/sir-doge-ledger/`
 
+## Quick tour
+
+| Goal | Where |
+|------|--------|
+| Try the UI with fake data | Login → **Try demo** |
+| Switch language | Sidebar flags 🇸🇪 / 🇺🇸 |
+| Set income / budgets / theme | **Settings** |
+| Fix learned categories | **Rules** |
+| Load sample transactions | **Import** → Load sample CSV |
+| Export or wipe before showing a friend | **Your data** |
+
 ## Try without a real export
 
-Import [`sample_data/sample_transactions.csv`](sample_data/sample_transactions.csv).
+1. **Import** → *Load sample CSV*, or  
+2. Use file [`sample_data/sample_transactions.csv`](sample_data/sample_transactions.csv), or  
+3. **Try demo** on the sign-in screen (isolated `demo.db`)
 
 ## Visual theme
 
 | HomeSec Scanner | SirDoge Ledger |
 |-----------------|----------------|
-| Neon green terminal | Navy + off-white + gold |
-| Matrix / CRT | Clean ledger panels |
+| Neon green terminal | Navy + off-white + gold (light) / deep charcoal (dark) |
+| Matrix / CRT | Ledger panels + banker Doge hero |
 | Guard Doge | Monocle banker Doge |
