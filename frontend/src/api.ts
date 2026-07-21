@@ -281,6 +281,8 @@ export const moneyApi = {
       preview_rows: Record<string, string>[];
       delimiter: string;
       guessed_mapping: Record<string, string | null>;
+      guessed_amount_decimal?: string;
+      parsed_preview?: Array<{ tx_date: string; amount: number; description: string }>;
       import_session_id: string;
       filename: string;
     }>("/api/money/preview", { method: "POST", body: fd });
