@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import EmptyState from "../components/EmptyState";
-import { formatKr, moneyApi, type RecurringGroup, type Transaction } from "../api";
+import { formatKr, moneyApi, type PriceAlert, type RecurringGroup, type Transaction } from "../api";
 import { useI18n, tr } from "../i18n";
 
 const HIDDEN = "ignore";
@@ -8,6 +8,7 @@ const HIDDEN = "ignore";
 export default function RecurringPage() {
   const { t, cat } = useI18n();
   const [groups, setGroups] = useState<RecurringGroup[]>([]);
+  const [priceAlerts, setPriceAlerts] = useState<PriceAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [related, setRelated] = useState<Transaction[]>([]);
@@ -23,10 +24,10 @@ export default function RecurringPage() {
 
   const load = () => {
     setLoading(true);
-    return moneyApi
-      .recurring()
-      .then((r) => {
+    return Promise.all([moneyApi.recurring(), moneyApi.priceAlerts()])
+      .then(([r, pa]) => {
         setGroups(r.groups);
+        setPriceAlerts(pa.alerts);
       })
       .finally(() => setLoading(false));
   };
@@ -99,6 +100,22 @@ export default function RecurringPage() {
     cancel: t.recurring.cancelWant,
     unsure: t.recurring.notSure,
   };
+  const cadenceLabel: Record<string, string> = {
+    weekly: t.recurring.cadenceWeekly,
+    monthly: t.recurring.cadenceMonthly,
+    quarterly: t.recurring.cadenceQuarterly,
+    yearly: t.recurring.cadenceYearly,
+  };
+
+  async function dismissPriceAlert(id: number) {
+    await moneyApi.acknowledgePriceEvent(id);
+    setPriceAlerts((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  function selectGroup(id: number) {
+    setSelectedId(id);
+    document.querySelector(".recurring-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   return (
     <div className="stack recurring-page">
@@ -106,6 +123,39 @@ export default function RecurringPage() {
       <p className="lede">{t.recurring.lede}</p>
 
       {loading && <p className="muted page-loading">{t.recurring.loading}</p>}
+
+      {!loading && priceAlerts.length > 0 && (
+        <section className="panel price-hikes-panel">
+          <h2>{t.recurring.priceHikesTitle}</h2>
+          <ul className="price-hikes-list">
+            {priceAlerts.map((alert) => (
+              <li key={alert.id} className="price-hike-item">
+                <button
+                  type="button"
+                  className="price-hike-main"
+                  onClick={() => selectGroup(alert.recurring_group_id)}
+                >
+                  {tr(t.recurring.priceHikeBody, {
+                    name: alert.name,
+                    old: String(alert.old_amount),
+                    new: String(alert.new_amount),
+                    cadence: cadenceLabel[alert.cadence] ?? alert.cadence,
+                    yearly: String(Math.round(alert.yearly_delta)),
+                    pct: String(alert.pct_change),
+                  })}
+                </button>
+                <button
+                  type="button"
+                  className="dismiss-btn"
+                  onClick={() => dismissPriceAlert(alert.id)}
+                >
+                  {t.recurring.priceHikeDismiss}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {!loading && visible.length > 0 && selected && (
         <div className="recurring-layout">

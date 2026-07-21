@@ -105,6 +105,28 @@ export type RecurringGroup = {
   cancel_by: string | null;
 };
 
+export type Insight = {
+  kind: string;
+  severity: string;
+  score: number;
+  params: Record<string, unknown>;
+  link?: string | null;
+};
+
+export type PriceAlert = {
+  id: number;
+  normalized_merchant: string;
+  old_amount: number;
+  new_amount: number;
+  detected_at: string;
+  pct_change: number;
+  yearly_delta: number;
+  name: string;
+  cadence: string;
+  typical_amount: number;
+  recurring_group_id: number;
+};
+
 export type LifeItem = {
   id: number;
   title: string;
@@ -291,6 +313,13 @@ export const moneyApi = {
       price: Array<Record<string, unknown>>;
       recommendations: Array<Record<string, unknown>>;
     }>("/api/money/alerts"),
+  insights: (months = 12) => api<{ insights: Insight[] }>(`/api/money/insights?months=${months}`),
+  priceAlerts: () =>
+    api<{ alerts: PriceAlert[]; yearly_total: number }>("/api/money/recurring/alerts"),
+  acknowledgePriceEvent: (id: number) =>
+    api<{ status: string }>(`/api/money/recurring/price-events/${id}/acknowledge`, {
+      method: "PATCH",
+    }),
   importSample: () => api<{ row_count: number }>("/api/money/import/sample", { method: "POST" }),
   bankProfiles: () => api<{ profiles: Array<Record<string, unknown>> }>("/api/money/bank-profiles"),
   budgets: () => api<{ budgets: Array<Record<string, unknown>>; savings_goals: Array<Record<string, unknown>> }>(

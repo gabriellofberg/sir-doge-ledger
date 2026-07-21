@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import ChartPlaceholder from "../components/ChartPlaceholder";
 import EmptyState from "../components/EmptyState";
-import { formatKr, moneyApi, type CashflowMonth, type MoneyStats } from "../api";
+import { formatKr, moneyApi, type CashflowMonth, type Insight, type MoneyStats } from "../api";
 import { useI18n, tr } from "../i18n";
 
 const CHART_COLORS = ["#1e3a5f", "#2f855a", "#c53030", "#b8953a", "#4a5568", "#805ad5", "#319795"];
@@ -42,7 +42,7 @@ export default function DashboardPage() {
   const [months, setMonths] = useState(12);
   const [categoryMonth, setCategoryMonth] = useState<string>(""); // "" = whole selected range
   const [loading, setLoading] = useState(true);
-  const [alerts, setAlerts] = useState<Array<Record<string, unknown>>>([]);
+  const [insights, setInsights] = useState<Insight[]>([]);
 
   useEffect(() => {
     setLoading(true);
@@ -52,9 +52,9 @@ export default function DashboardPage() {
       moneyApi.completeness(),
       moneyApi.cashflow(months),
       moneyApi.breakdown("spent", { months }),
-      moneyApi.alerts(),
+      moneyApi.insights(months),
     ])
-      .then(([s, cf, bd, al]) => {
+      .then(([s, cf, bd, ins]) => {
         setStats(s);
         setCashflow(cf.months);
         setBreakdown(
@@ -64,7 +64,7 @@ export default function DashboardPage() {
             tx_count: c.tx_count,
           })),
         );
-        setAlerts([...al.budget, ...al.price, ...al.recommendations]);
+        setInsights(ins.insights);
       })
       .finally(() => setLoading(false));
   }, [months]);
@@ -116,32 +116,114 @@ export default function DashboardPage() {
 
   if (loading) return <p className="muted page-loading">{t.overview.loading}</p>;
 
-  function alertText(a: Record<string, unknown>): string {
-    if (a.kind === "housing_high") return tr(t.overview.alertHousing, { pct: String(a.pct) });
-    if (a.kind === "over_budget")
-      return tr(t.overview.alertOverBudget, {
-        category: cat(String(a.category)),
-        spent: String(a.spent),
-        limit: String(a.limit),
-      });
-    if (a.kind === "spending_up")
-      return tr(t.overview.alertSpendingUp, {
-        category: cat(String(a.category)),
-        pct: String(a.pct_change),
-      });
-    if (a.kind === "spending_down")
-      return tr(t.overview.alertSpendingDown, {
-        category: cat(String(a.category)),
-        pct: String(Math.abs(Number(a.pct_change))),
-      });
-    if (a.kind === "set_income") return t.overview.alertSetIncome;
-    if (a.normalized_merchant)
-      return tr(t.overview.alertPrice, {
-        merchant: String(a.normalized_merchant),
-        old: String(a.old_amount),
-        new: String(a.new_amount),
-      });
-    return "";
+  function insightContent(insight: Insight): { title: string; body: string } | null {
+    const p = insight.params;
+    const kind = insight.kind;
+    if (kind === "over_budget")
+      return {
+        title: cat(String(p.category)),
+        body: tr(t.overview.alertOverBudget, {
+          category: cat(String(p.category)),
+          spent: String(p.spent),
+          limit: String(p.limit),
+        }),
+      };
+    if (kind === "spending_up")
+      return {
+        title: cat(String(p.category)),
+        body: tr(t.overview.alertSpendingUp, {
+          category: cat(String(p.category)),
+          pct: String(p.pct_change),
+        }),
+      };
+    if (kind === "spending_down")
+      return {
+        title: cat(String(p.category)),
+        body: tr(t.overview.alertSpendingDown, {
+          category: cat(String(p.category)),
+          pct: String(Math.abs(Number(p.pct_change))),
+        }),
+      };
+    if (kind === "savings_scenario")
+      return {
+        title: t.overview.insightSavingsTitle,
+        body: tr(t.overview.insightSavingsBody, {
+          category: cat(String(p.category)),
+          spent: String(p.spent),
+          months: String(p.months),
+          pct: String(p.reduction_pct),
+          savings: String(p.savings),
+        }),
+      };
+    if (kind === "top_merchant")
+      return {
+        title: t.overview.insightTopMerchantTitle,
+        body: tr(t.overview.insightTopMerchantBody, {
+          merchant: String(p.merchant),
+          spent: String(p.spent),
+          pct: String(p.pct),
+        }),
+      };
+    if (kind === "category_share")
+      return {
+        title: t.overview.insightCategoryShareTitle,
+        body: tr(t.overview.insightCategoryShareBody, {
+          category: cat(String(p.category)),
+          pct: String(p.pct),
+          spent: String(p.spent),
+        }),
+      };
+    if (kind === "income_share")
+      return {
+        title: t.overview.insightIncomeShareTitle,
+        body: tr(t.overview.insightIncomeShareBody, {
+          category: cat(String(p.category)),
+          pct: String(p.pct),
+          guideline: String(p.guideline_hi),
+        }),
+      };
+    if (kind === "mom_trend") {
+      const up = p.direction === "up";
+      return {
+        title: up ? t.overview.insightMomUpTitle : t.overview.insightMomDownTitle,
+        body: tr(up ? t.overview.insightMomUpBody : t.overview.insightMomDownBody, {
+          pct: String(p.pct),
+          month: String(p.month),
+        }),
+      };
+    }
+    if (kind === "yoy_change")
+      return {
+        title: t.overview.insightYoyTitle,
+        body: tr(t.overview.insightYoyBody, {
+          category: cat(String(p.category)),
+          pct: String(p.pct),
+          prevYear: String(p.prev_year),
+        }),
+      };
+    if (kind === "recurring_burden")
+      return {
+        title: t.overview.insightRecurringTitle,
+        body: tr(t.overview.insightRecurringBody, {
+          total: String(p.total),
+          names: String(p.names),
+        }),
+      };
+    if (kind === "best_month")
+      return {
+        title: t.overview.insightBestMonthTitle,
+        body: tr(t.overview.insightBestMonthBody, {
+          month: String(p.month),
+          net: String(p.net),
+        }),
+      };
+    return null;
+  }
+
+  function insightSeverityClass(severity: string): string {
+    if (severity === "bad" || severity === "warn") return "warn";
+    if (severity === "good") return "good";
+    return "info";
   }
 
   return (
@@ -187,15 +269,21 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {alerts.length > 0 && (
-        <section className="panel alerts-panel">
+      {insights.length > 0 && (
+        <section className="panel alerts-panel insights-panel">
           <h2>{t.overview.insights}</h2>
-          {alerts.slice(0, 6).map((a, i) => {
-            const text = alertText(a);
-            if (!text) return null;
+          {insights.map((insight, i) => {
+            const content = insightContent(insight);
+            if (!content) return null;
             return (
-              <div key={i} className={`alert ${String(a.severity ?? "warn")}`}>
-                {text}
+              <div key={i} className={`insight-card alert ${insightSeverityClass(insight.severity)}`}>
+                <strong className="insight-title">{content.title}</strong>
+                <p className="insight-body">{content.body}</p>
+                {insight.link && (
+                  <Link to={insight.link} className="insight-link">
+                    {t.overview.insightViewTx}
+                  </Link>
+                )}
               </div>
             );
           })}

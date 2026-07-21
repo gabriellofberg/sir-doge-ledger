@@ -7,7 +7,13 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from ..config import MAX_TRANSACTION_LIMIT, SAMPLE_DATA_DIR
-from ..services import budgets as budget_svc, categories as cat_svc, money, recommendations as reco_svc
+from ..services import (
+    budgets as budget_svc,
+    categories as cat_svc,
+    insights as insights_svc,
+    money,
+    recommendations as reco_svc,
+)
 from ..services.import_parse import ColumnMapping
 from ..services.import_sessions import save_upload
 
@@ -323,6 +329,17 @@ def alerts() -> dict[str, Any]:
         "price": money.price_alerts(),
         "recommendations": reco_svc.recommendations(),
     }
+
+
+@router.get("/insights")
+def insights(months: int = 12) -> dict[str, Any]:
+    return {"insights": insights_svc.generate_insights(months)}
+
+
+@router.patch("/recurring/price-events/{event_id}/acknowledge")
+def acknowledge_price_event(event_id: int) -> dict[str, str]:
+    money.acknowledge_price_event(event_id)
+    return {"status": "ok"}
 
 
 @router.get("/budgets")

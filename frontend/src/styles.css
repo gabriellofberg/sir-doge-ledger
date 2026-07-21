@@ -1530,6 +1530,72 @@ button.linkish {
   font-size: 0.9rem;
 }
 
+.insights-panel .insight-card {
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.insight-title {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+}
+
+.insight-body {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.insight-link {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+}
+
+.alert.info {
+  background: var(--panel-bg, #f8f6f1);
+  border: 1px solid var(--border, #e8dcc8);
+}
+
+.price-hikes-panel {
+  margin-bottom: 0.5rem;
+}
+
+.price-hikes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.price-hike-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border, #e8dcc8);
+}
+
+.price-hike-item:last-child {
+  border-bottom: none;
+}
+
+.price-hike-main {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.price-hike-main:hover {
+  text-decoration: underline;
+}
+
 .alert.bad {
   background: #fff5f5;
   border: 1px solid #feb2b2;

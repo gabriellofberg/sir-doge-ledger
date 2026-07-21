@@ -834,22 +834,50 @@ def _detect_price_changes(conn) -> None:
             )
 
 
+_CADENCE_YEARLY: dict[str, float] = {
+    "weekly": 52,
+    "monthly": 12,
+    "quarterly": 4,
+    "yearly": 1,
+}
+
+
 def price_alerts() -> list[dict[str, Any]]:
     with get_db() as conn:
         _detect_price_changes(conn)
         rows = rows_to_dicts(
             conn.execute(
                 """
-                SELECT * FROM recurring_price_events
-                WHERE acknowledged = 0
-                ORDER BY detected_at DESC
+                SELECT pe.*,
+                       rg.name,
+                       rg.cadence,
+                       rg.typical_amount,
+                       rg.id AS recurring_group_id
+                FROM recurring_price_events pe
+                INNER JOIN recurring_groups rg
+                  ON rg.normalized_merchant = pe.normalized_merchant
+                 AND rg.decision NOT IN ('ignore')
+                WHERE pe.acknowledged = 0
+                ORDER BY pe.detected_at DESC
                 LIMIT 20
                 """
             ).fetchall()
         )
     for row in rows:
-        row["pct_change"] = round((row["new_amount"] - row["old_amount"]) / row["old_amount"] * 100, 1)
+        old = float(row["old_amount"])
+        new = float(row["new_amount"])
+        row["pct_change"] = round((new - old) / old * 100, 1) if old > 0 else 0
+        factor = _CADENCE_YEARLY.get(str(row.get("cadence") or "monthly"), 12)
+        row["yearly_delta"] = round((new - old) * factor, 2)
     return rows
+
+
+def acknowledge_price_event(event_id: int) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE recurring_price_events SET acknowledged = 1 WHERE id = ?",
+            (event_id,),
+        )
 
 
 def recurring_yearly_total() -> float:
