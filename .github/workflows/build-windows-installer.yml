@@ -32,6 +32,32 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          try {
+            $packageLock = Get-Content package-lock.json -Raw | ConvertFrom-Json -AsHashtable
+          }
+          catch {
+            throw "Failed to load package-lock.json from the frontend directory: $($_.Exception.Message)"
+          }
+          if (-not $packageLock.ContainsKey('packages')) {
+            throw "package-lock.json is missing the top-level packages map"
+          }
+          $rollupPackages = $packageLock['packages']
+          if (-not $rollupPackages.ContainsKey('node_modules/rollup')) {
+            throw "package-lock.json is missing the node_modules/rollup package entry"
+          }
+          $rollupPackage = $rollupPackages['node_modules/rollup']
+          if (-not $rollupPackage.ContainsKey('optionalDependencies')) {
+            throw "package-lock.json is missing optionalDependencies for node_modules/rollup"
+          }
+          $rollupOptionalDependencies = $rollupPackage['optionalDependencies']
+          if (-not $rollupOptionalDependencies.ContainsKey('@rollup/rollup-win32-x64-msvc')) {
+            throw "package-lock.json is missing @rollup/rollup-win32-x64-msvc in node_modules/rollup optionalDependencies"
+          }
+          $rollupVersion = $rollupOptionalDependencies['@rollup/rollup-win32-x64-msvc']
+          npm install --no-save "@rollup/rollup-win32-x64-msvc@$rollupVersion"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install @rollup/rollup-win32-x64-msvc@$rollupVersion"
+          }
           npm run build
 
       - name: Install Python deps and run tests
