@@ -33,7 +33,13 @@ jobs:
         run: |
           npm ci
           $rollupVersionScript = @'
-          const lock = require('./package-lock.json');
+          let lock;
+          try {
+            lock = require('./package-lock.json');
+          } catch (error) {
+            console.error(`Failed to load package-lock.json: ${error.message}`);
+            process.exit(1);
+          }
           if (!lock.packages) {
             console.error('package-lock.json is missing the top-level packages map');
             process.exit(1);
