@@ -37,7 +37,7 @@ jobs:
           try {
             lock = require('./package-lock.json');
           } catch (error) {
-            const details = error?.stack ?? error?.message ?? String(error);
+            const details = (error && error.stack) || (error && error.message) || String(error);
             console.error(`Failed to load package-lock.json from the frontend directory: ${details}`);
             process.exit(1);
           }
@@ -64,9 +64,6 @@ jobs:
           $rollupVersion = node -e $rollupVersionScript
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to resolve the lockfile-pinned version for @rollup/rollup-win32-x64-msvc"
-          }
-          if ([string]::IsNullOrWhiteSpace($rollupVersion)) {
-            throw "Resolved an empty lockfile-pinned version for @rollup/rollup-win32-x64-msvc"
           }
           npm install --no-save "@rollup/rollup-win32-x64-msvc@$rollupVersion"
           if ($LASTEXITCODE -ne 0) {
