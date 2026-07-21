@@ -9,7 +9,13 @@ from typing import Any
 
 from ..config import MAX_TRANSACTION_LIMIT, MAX_UPLOAD_BYTES
 from ..db import get_db, now_iso, rows_to_dicts
-from .categorize import categorize, ensure_category, _DEFAULT_FOODORA_THRESHOLD
+from .categorize import (
+    _DEFAULT_FOODORA_THRESHOLD,
+    categorize,
+    ensure_category,
+    is_swish_payment,
+    resolve_transfer_kind,
+)
 from .import_parse import ColumnMapping, guess_mapping, parse_all_rows, read_tabular
 from .import_sessions import delete_session, get_session_path
 from .normalize import clean_match_text, group_key, merchant_key, normalize_merchant, phrase_matches
@@ -54,10 +60,11 @@ def apply_rule_to_existing(conn, match_text: str, category: str) -> int:
         conn.execute(
             """
             UPDATE transactions
-            SET category = ?, category_source = 'learned', confidence = 0.95, needs_review = 0
+            SET category = ?, category_source = 'learned', confidence = 0.95, needs_review = 0,
+                transfer_kind = ?
             WHERE id = ?
             """,
-            (category, row["id"]),
+            (category, resolve_transfer_kind(category, row["raw_description"]), row["id"]),
         )
         updated += 1
     return updated
@@ -78,10 +85,15 @@ def reapply_all_learned_rules(conn) -> int:
                 conn.execute(
                     """
                     UPDATE transactions
-                    SET category = ?, category_source = 'learned', confidence = 0.95, needs_review = 0
+                    SET category = ?, category_source = 'learned', confidence = 0.95, needs_review = 0,
+                        transfer_kind = ?
                     WHERE id = ?
                     """,
-                    (ensure_category(category), row["id"]),
+                    (
+                        ensure_category(category),
+                        resolve_transfer_kind(category, row["raw_description"]),
+                        row["id"],
+                    ),
                 )
                 updated += 1
                 break
@@ -110,6 +122,7 @@ def sanitize_category_rules(conn) -> int:
         changed += 1
     reapply_all_learned_rules(conn)
     _recategorize_foodora(conn)
+    _recategorize_swish_transfers(conn)
     return changed
 
 
@@ -139,6 +152,33 @@ def _recategorize_foodora(conn) -> int:
                 (row["id"],),
             )
             updated += 1
+    return updated
+
+
+def _recategorize_swish_transfers(conn) -> int:
+    """Move misclassified Swish payments out of Transfers (they are real expenses)."""
+    rows = conn.execute(
+        """
+        SELECT id, raw_description, amount
+        FROM transactions
+        WHERE category = ?
+          AND category_source NOT IN ('manual_once', 'learned')
+        """,
+        (TRANSFER_CAT,),
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        if not is_swish_payment(row["raw_description"], float(row["amount"])):
+            continue
+        conn.execute(
+            """
+            UPDATE transactions
+            SET category = 'Other', category_source = 'auto', confidence = 0.9, needs_review = 0
+            WHERE id = ?
+            """,
+            (row["id"],),
+        )
+        updated += 1
     return updated
 
 
@@ -202,8 +242,9 @@ def commit_import_session(
                 """
                 INSERT INTO transactions (
                     import_id, tx_date, amount, raw_description, normalized_merchant,
-                    category, category_source, confidence, needs_review, tx_hash, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    category, category_source, confidence, needs_review, tx_hash,
+                    transfer_kind, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     import_id,
@@ -216,6 +257,7 @@ def commit_import_session(
                     cat.confidence,
                     1 if cat.needs_review else 0,
                     h,
+                    cat.transfer_kind,
                     now_iso(),
                 ),
             )
@@ -294,6 +336,8 @@ def list_transactions(
     *,
     needs_review: bool | None = None,
     income_review: bool | None = None,
+    transfer_review: bool | None = None,
+    transfers_only: bool | None = None,
     category: str | None = None,
     search: str | None = None,
     tag: str | None = None,
@@ -314,6 +358,11 @@ def list_transactions(
     if income_review is True:
         clauses.append("t.amount > 0")
         clauses.append(f"t.category NOT IN ('{INCOME_CAT}', '{TRANSFER_CAT}')")
+    if transfer_review is True:
+        clauses.append(f"t.category = '{TRANSFER_CAT}'")
+        clauses.append("t.transfer_kind IS NULL")
+    if transfers_only is True and transfer_review is not True:
+        clauses.append(f"t.category = '{TRANSFER_CAT}'")
     if category:
         clauses.append("t.category = ?")
         params.append(category)
@@ -439,6 +488,32 @@ def breakdown(
         return rows_to_dicts(conn.execute(sql, params).fetchall())
 
 
+def transfer_summary() -> dict[str, Any]:
+    with get_db() as conn:
+        internal = conn.execute(
+            """
+            SELECT COUNT(*) AS c, COALESCE(SUM(ABS(amount)), 0) AS v
+            FROM transactions
+            WHERE category = ? AND transfer_kind = 'internal'
+            """,
+            (TRANSFER_CAT,),
+        ).fetchone()
+        pending = conn.execute(
+            """
+            SELECT COUNT(*) AS c, COALESCE(SUM(ABS(amount)), 0) AS v
+            FROM transactions
+            WHERE category = ? AND transfer_kind IS NULL
+            """,
+            (TRANSFER_CAT,),
+        ).fetchone()
+    return {
+        "internal_volume": round(float(internal["v"]), 2),
+        "internal_count": int(internal["c"]),
+        "pending_count": int(pending["c"]),
+        "pending_volume": round(float(pending["v"]), 2),
+    }
+
+
 def completeness() -> dict[str, Any]:
     stats = money_stats()
     with get_db() as conn:
@@ -452,6 +527,7 @@ def completeness() -> dict[str, Any]:
     return {
         **stats,
         "uncategorized_income_count": int(uncategorized_income),
+        "transfer_summary": transfer_summary(),
     }
 
 
@@ -487,10 +563,16 @@ def update_transaction_category(
         conn.execute(
             """
             UPDATE transactions
-            SET category = ?, category_source = ?, confidence = 1.0, needs_review = 0
+            SET category = ?, category_source = ?, confidence = 1.0, needs_review = 0,
+                transfer_kind = ?
             WHERE id = ?
             """,
-            (category, source, tx_id),
+            (
+                category,
+                source,
+                resolve_transfer_kind(category, row["raw_description"]),
+                tx_id,
+            ),
         )
         if notes is not None:
             conn.execute("UPDATE transactions SET notes = ? WHERE id = ?", (notes, tx_id))
@@ -576,7 +658,8 @@ def money_stats() -> dict[str, Any]:
         ).fetchone()["s"]
         transfer_volume = conn.execute(
             """
-            SELECT COALESCE(SUM(ABS(amount)), 0) AS s FROM transactions WHERE category = ?
+            SELECT COALESCE(SUM(ABS(amount)), 0) AS s FROM transactions
+            WHERE category = ? AND transfer_kind = 'internal'
             """,
             (TRANSFER_CAT,),
         ).fetchone()["s"]
@@ -704,13 +787,18 @@ def bulk_update_category(
                 apply_rule_to_existing(conn, key, category)
             updated = 0
             for tx_id in ids:
+                row = conn.execute(
+                    "SELECT raw_description FROM transactions WHERE id = ?", (tx_id,)
+                ).fetchone()
+                tk = resolve_transfer_kind(category, row["raw_description"]) if row else None
                 cur = conn.execute(
                     """
                     UPDATE transactions
-                    SET category = ?, category_source = 'learned', confidence = 1.0, needs_review = 0
+                    SET category = ?, category_source = 'learned', confidence = 1.0, needs_review = 0,
+                        transfer_kind = ?
                     WHERE id = ?
                     """,
-                    (category, tx_id),
+                    (category, tk, tx_id),
                 )
                 updated += cur.rowcount
             return updated
@@ -721,6 +809,88 @@ def bulk_update_category(
             updated += 1
         except KeyError:
             continue
+    return updated
+
+
+def classify_transfer(
+    transaction_ids: list[int],
+    kind: str,
+    *,
+    category: str | None = None,
+    remember: bool = False,
+    match_text: str | None = None,
+) -> int:
+    """Classify bank transfers as internal (excluded), income, or expense."""
+    kind = kind.strip().lower()
+    if kind not in ("internal", "income", "expense"):
+        raise ValueError("invalid transfer kind")
+    if kind == "expense" and not category:
+        raise ValueError("category required for expense")
+    if not transaction_ids:
+        return 0
+
+    if kind == "internal":
+        target_category = TRANSFER_CAT
+        target_kind: str | None = "internal"
+    elif kind == "income":
+        target_category = INCOME_CAT
+        target_kind = None
+    else:
+        target_category = ensure_category(category or "Other")
+        target_kind = None
+
+    updated = 0
+    with get_db() as conn:
+        key = ""
+        if remember:
+            sample = conn.execute(
+                "SELECT raw_description FROM transactions WHERE id = ?", (transaction_ids[0],)
+            ).fetchone()
+            if sample:
+                key = clean_match_text(match_text or merchant_key(sample["raw_description"]))
+                if not key:
+                    key = merchant_key(sample["raw_description"])
+            if key:
+                conn.execute(
+                    """
+                    INSERT INTO category_rules (match_text, category, enabled, created_at)
+                    VALUES (?, ?, 1, ?)
+                    ON CONFLICT(match_text) DO UPDATE SET category = excluded.category, enabled = 1
+                    """,
+                    (key, target_category, now_iso()),
+                )
+        source = "learned" if remember and key else "manual_once"
+        for tx_id in transaction_ids:
+            if not conn.execute("SELECT id FROM transactions WHERE id = ?", (tx_id,)).fetchone():
+                continue
+            conn.execute(
+                """
+                UPDATE transactions
+                SET category = ?, category_source = ?, confidence = 1.0, needs_review = 0,
+                    transfer_kind = ?
+                WHERE id = ?
+                """,
+                (target_category, source, target_kind, tx_id),
+            )
+            updated += 1
+        if remember and key:
+            if kind == "internal":
+                rows = conn.execute(
+                    "SELECT id, raw_description FROM transactions WHERE category_source != 'manual_once'"
+                ).fetchall()
+                for row in rows:
+                    if phrase_matches(key, row["raw_description"]):
+                        conn.execute(
+                            """
+                            UPDATE transactions
+                            SET category = ?, category_source = 'learned', confidence = 0.95,
+                                needs_review = 0, transfer_kind = 'internal'
+                            WHERE id = ?
+                            """,
+                            (TRANSFER_CAT, row["id"]),
+                        )
+            else:
+                apply_rule_to_existing(conn, key, target_category)
     return updated
 
 

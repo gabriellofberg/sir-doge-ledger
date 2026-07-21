@@ -46,8 +46,24 @@ def test_categorize_sj_and_vasttrafik_builtin():
     assert categorize("Kortköp VÄSTTRAFIK", -39.0, []).category == "Transport"
 
 
-def test_categorize_swish_builtin():
-    assert categorize("Swish till Oliwer", -100.0, []).category == "Transfers"
+def test_categorize_swish_payment_is_expense():
+    r = categorize("Swish betalning Erik Engebretsen", -6500.0, [])
+    assert r.category == "Other"
+    assert r.source == "auto"
+    assert r.needs_review is False
+    assert categorize("Swish till Oliwer", -100.0, []).category == "Other"
+
+
+def test_categorize_internal_transfer_stays_transfer():
+    assert categorize("Överföring 3058 22 82136", 15000.0, []).category == "Transfers"
+    assert categorize("Xtraspar", -10.0, []).category == "Transfers"
+    assert categorize("Överföring sparkonto", -5000.0, []).category == "Transfers"
+
+
+def test_categorize_incoming_swish_needs_review():
+    r = categorize("Swish från Erik", 500.0, [])
+    assert r.category == "Unclear"
+    assert r.needs_review is True
 
 
 def test_categorize_learned_rule_substring():
@@ -220,3 +236,33 @@ def test_list_transactions_sort_date_asc():
 
     rows = list_transactions(category="Shopping", sort="date_asc")
     assert [r["raw_description"] for r in rows] == ["EARLY", "LATE"]
+
+
+def test_recategorize_swish_transfers_on_startup():
+    from app.db import get_db
+    from app.services.money import _recategorize_swish_transfers
+
+    with get_db() as conn:
+        conn.execute("DELETE FROM transactions")
+        _seed_tx(
+            conn,
+            tx_date="2026-07-16",
+            amount=-6500.0,
+            desc="Swish betalning Erik",
+            category="Transfers",
+        )
+        _seed_tx(conn, tx_date="2026-07-17", amount=-10.0, desc="Xtraspar", category="Transfers")
+
+    with get_db() as conn:
+        updated = _recategorize_swish_transfers(conn)
+
+    assert updated == 1
+    with get_db() as conn:
+        swish = conn.execute(
+            "SELECT category FROM transactions WHERE raw_description LIKE 'Swish%'"
+        ).fetchone()
+        xtra = conn.execute(
+            "SELECT category FROM transactions WHERE raw_description = 'Xtraspar'"
+        ).fetchone()
+    assert swish["category"] == "Other"
+    assert xtra["category"] == "Transfers"

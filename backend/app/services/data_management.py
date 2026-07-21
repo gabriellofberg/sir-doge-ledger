@@ -50,6 +50,7 @@ _TABLE_COLUMNS: dict[str, list[str]] = {
         "needs_review",
         "tx_hash",
         "notes",
+        "transfer_kind",
         "created_at",
     ],
     "transaction_tags": ["transaction_id", "tag"],

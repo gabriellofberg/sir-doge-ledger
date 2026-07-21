@@ -177,8 +177,6 @@ _BUILTIN: list[tuple[str, list[str]]] = [
             "SPARA",
             "AVANZA",
             "NORDNET",
-            "SWISH",
-            "SWISH TILL",
         ],
     ),
     (
@@ -200,6 +198,30 @@ _MED = 0.65
 _LOW = 0.4
 _UNCLEAR_THRESHOLD = 0.55
 
+_INTERNAL_TRANSFER_KEYWORDS = [
+    "ÖVERFÖRING",
+    "OVERFORING",
+    "TRANSFER",
+    "EGNA KONTON",
+    "XTRASPAR",
+    "AVANZA",
+    "NORDNET",
+]
+
+
+def is_internal_transfer(description: str) -> bool:
+    """True for moves between the user's own accounts (not payments to others)."""
+    return any(phrase_matches(w, description) for w in _INTERNAL_TRANSFER_KEYWORDS)
+
+
+def is_swish_payment(description: str, amount: float) -> bool:
+    """True when Swish is an outgoing payment to another person, not an account move."""
+    if amount >= 0 or not phrase_matches("SWISH", description):
+        return False
+    if is_internal_transfer(description):
+        return False
+    return True
+
 
 @dataclass
 class CategoryResult:
@@ -207,6 +229,28 @@ class CategoryResult:
     source: str  # learned | auto | unclear
     confidence: float
     needs_review: bool
+    transfer_kind: str | None = None
+
+
+def resolve_transfer_kind(category: str, description: str) -> str | None:
+    if category != "Transfers":
+        return None
+    if is_internal_transfer(description):
+        return "internal"
+    return None
+
+
+def _finalize(result: CategoryResult, description: str) -> CategoryResult:
+    tk = resolve_transfer_kind(result.category, description)
+    if tk == result.transfer_kind:
+        return result
+    return CategoryResult(
+        result.category,
+        result.source,
+        result.confidence,
+        result.needs_review,
+        tk,
+    )
 
 
 def categorize(
@@ -219,7 +263,17 @@ def categorize(
     """Return category attempt. learned_rules: list of (match_text, category)."""
     for match_text, category in learned_rules:
         if phrase_matches(match_text, description):
-            return CategoryResult(category, "learned", _HIGH, False)
+            return _finalize(CategoryResult(category, "learned", _HIGH, False), description)
+
+    if is_internal_transfer(description):
+        return CategoryResult("Transfers", "auto", _HIGH, False, transfer_kind="internal")
+
+    if is_swish_payment(description, amount):
+        return CategoryResult("Other", "auto", _HIGH, False)
+
+    if amount > 0 and phrase_matches("SWISH", description):
+        # Incoming Swish from another person — not salary; let user classify
+        return CategoryResult("Unclear", "unclear", _LOW, True)
 
     if amount > 0:
         # Income heuristic when description weak
@@ -266,7 +320,7 @@ def categorize(
         )
 
     # Clear keyword / amount heuristics: trust them; only Unclear goes to review queue
-    return CategoryResult(best.category, "auto", best.confidence, False)
+    return _finalize(best, description)
 
 
 def ensure_category(name: str) -> str:

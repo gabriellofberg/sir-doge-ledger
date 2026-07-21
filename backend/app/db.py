@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     needs_review INTEGER NOT NULL DEFAULT 0,
     tx_hash TEXT,
     notes TEXT,
+    transfer_kind TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -192,6 +193,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(transactions)").fetchall()}
     if "tx_hash" not in cols:
         conn.execute("ALTER TABLE transactions ADD COLUMN tx_hash TEXT")
+    if "transfer_kind" not in cols:
+        conn.execute("ALTER TABLE transactions ADD COLUMN transfer_kind TEXT")
+        conn.execute(
+            """
+            UPDATE transactions SET transfer_kind = 'internal'
+            WHERE category = 'Transfers' AND transfer_kind IS NULL
+            """
+        )
     rec_cols = {r[1] for r in conn.execute("PRAGMA table_info(recurring_groups)").fetchall()}
     if rec_cols and "cancel_by" not in rec_cols:
         conn.execute("ALTER TABLE recurring_groups ADD COLUMN cancel_by TEXT")

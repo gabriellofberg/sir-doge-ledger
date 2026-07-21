@@ -29,6 +29,9 @@ export default function TransactionsPage() {
   const [params, setParams] = useSearchParams();
   const reviewOnly = params.get("review") === "1";
   const incomeOnly = params.get("income") === "1";
+  const transfersParam = params.get("transfers");
+  const transfersOnly = transfersParam === "1" || transfersParam === "review";
+  const transferReviewOnly = transfersParam === "review";
   const categoryFilter = params.get("category") || "";
   const monthFilter = params.get("month") || "";
   const sortParam = params.get("sort");
@@ -38,6 +41,8 @@ export default function TransactionsPage() {
   const [monthOptions, setMonthOptions] = useState<string[]>([]);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [groupEdit, setGroupEdit] = useState<GroupEdit | null>(null);
+  const [transferExpenseEdit, setTransferExpenseEdit] = useState<GroupEdit | null>(null);
+  const [rememberTransfer, setRememberTransfer] = useState(true);
   const [loading, setLoading] = useState(true);
   const [searchDraft, setSearchDraft] = useState(searchParam);
 
@@ -57,6 +62,8 @@ export default function TransactionsPage() {
       moneyApi.transactions({
         needs_review: reviewOnly ? true : undefined,
         income_review: incomeOnly ? true : undefined,
+        transfer_review: transferReviewOnly ? true : undefined,
+        transfers_only: transfersOnly && !transferReviewOnly ? true : undefined,
         category: categoryFilter || undefined,
         month: monthFilter || undefined,
         sort: sortFilter,
@@ -71,7 +78,7 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     load();
-  }, [reviewOnly, incomeOnly, categoryFilter, monthFilter, sortFilter, searchParam]);
+  }, [reviewOnly, incomeOnly, transfersOnly, transferReviewOnly, categoryFilter, monthFilter, sortFilter, searchParam]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -97,9 +104,10 @@ export default function TransactionsPage() {
   const title = useMemo(() => {
     if (incomeOnly) return t.transactions.incomeReview;
     if (reviewOnly) return t.transactions.needsReview;
+    if (transfersOnly) return t.transactions.transferReview;
     if (categoryFilter) return `${t.transactions.categoryPrefix} ${cat(categoryFilter)}`;
     return t.transactions.all;
-  }, [reviewOnly, incomeOnly, categoryFilter, t, cat]);
+  }, [reviewOnly, incomeOnly, transfersOnly, categoryFilter, t, cat]);
 
   const hasActiveFilters = Boolean(
     categoryFilter || monthFilter || searchParam || sortFilter !== "date_desc",
@@ -118,7 +126,7 @@ export default function TransactionsPage() {
   }, [monthFilter, categoryFilter, cat]);
 
   const groups = useMemo(() => {
-    if (!reviewOnly) return [];
+    if (!reviewOnly && !transfersOnly) return [];
     const map = new Map<string, Transaction[]>();
     for (const row of rows) {
       const key = (row.group_key || row.normalized_merchant || "UNKNOWN").trim() || "UNKNOWN";
@@ -129,7 +137,7 @@ export default function TransactionsPage() {
     return [...map.entries()]
       .map(([key, txs]) => ({ key, txs }))
       .sort((a, b) => b.txs.length - a.txs.length || a.key.localeCompare(b.key));
-  }, [rows, reviewOnly]);
+  }, [rows, reviewOnly, transfersOnly]);
 
   async function save(category: string, remember: boolean, matchText?: string) {
     if (groupEdit) {
@@ -147,13 +155,36 @@ export default function TransactionsPage() {
     await load();
   }
 
+  async function classifyTransferGroup(
+    txs: Transaction[],
+    kind: "internal" | "income" | "expense",
+    category?: string,
+    matchText?: string,
+  ) {
+    await moneyApi.classifyTransfer({
+      transaction_ids: txs.map((x) => x.id),
+      kind,
+      category,
+      remember: rememberTransfer,
+      match_text: matchText,
+    });
+    await load();
+  }
+
   function renderRow(row: Transaction) {
+    const transferBadge =
+      transfersOnly && row.transfer_kind === "internal"
+        ? t.transactions.transferStatusInternal
+        : transfersOnly && !row.transfer_kind
+          ? t.transactions.transferStatusPending
+          : null;
     return (
       <tr key={row.id} className={row.needs_review ? "needs-review" : undefined}>
         <td>{row.tx_date}</td>
         <td>
           <div>{row.raw_description}</div>
           {row.needs_review ? <span className="badge">{t.transactions.unclear}</span> : null}
+          {transferBadge ? <span className="badge muted">{transferBadge}</span> : null}
         </td>
         <td className={row.amount < 0 ? "neg" : "pos"}>{formatKr(row.amount)}</td>
         <td>{cat(row.category)}</td>
@@ -193,6 +224,7 @@ export default function TransactionsPage() {
                 if (e.target.checked) {
                   next.set("review", "1");
                   next.delete("income");
+                  next.delete("transfers");
                 } else next.delete("review");
                 setParams(next);
               }}
@@ -208,6 +240,7 @@ export default function TransactionsPage() {
                 if (e.target.checked) {
                   next.set("income", "1");
                   next.delete("review");
+                  next.delete("transfers");
                 } else next.delete("income");
                 setParams(next);
               }}
@@ -216,7 +249,44 @@ export default function TransactionsPage() {
           </label>
         </div>
       </div>
-      <p className="lede">{reviewOnly ? t.transactions.reviewLede : t.transactions.lede}</p>
+      <p className="lede">
+        {reviewOnly
+          ? t.transactions.reviewLede
+          : transfersOnly
+            ? t.transactions.transferReviewLede
+            : t.transactions.lede}
+      </p>
+
+      {transfersOnly && (
+        <div className="filter-row transfer-review-toggles">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={transferReviewOnly}
+              onChange={(e) => {
+                const next = new URLSearchParams(params);
+                if (e.target.checked) {
+                  next.set("transfers", "review");
+                } else {
+                  next.set("transfers", "1");
+                }
+                next.delete("review");
+                next.delete("income");
+                setParams(next);
+              }}
+            />
+            {t.transactions.transferPendingOnly}
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={rememberTransfer}
+              onChange={(e) => setRememberTransfer(e.target.checked)}
+            />
+            {t.modal.remember}
+          </label>
+        </div>
+      )}
 
       <div className="tx-toolbar-sticky">
         <section className="panel tx-filters" aria-label={t.transactions.filtersLabel}>
@@ -272,7 +342,7 @@ export default function TransactionsPage() {
           </label>
         </section>
 
-        {!loading && rows.length > 0 && (hasActiveFilters || reviewOnly || incomeOnly) && (
+        {!loading && rows.length > 0 && (hasActiveFilters || reviewOnly || incomeOnly || transfersOnly) && (
           <p className="tx-summary">
             <strong>
               {tr(t.transactions.filterSummary, {
@@ -285,7 +355,7 @@ export default function TransactionsPage() {
         )}
       </div>
 
-      {reviewOnly && !loading && groups.length > 0 ? (
+      {(reviewOnly || transfersOnly) && !loading && groups.length > 0 ? (
         <div className="stack review-groups">
           {groups.map(({ key, txs }) => (
             <section key={key} className="panel review-group">
@@ -296,9 +366,33 @@ export default function TransactionsPage() {
                     {t.transactions.groupCount.replace("{count}", String(txs.length))}
                   </p>
                 </div>
-                <button type="button" className="primary" onClick={() => setGroupEdit({ key, txs })}>
-                  {t.transactions.categorizeGroup}
-                </button>
+                {reviewOnly ? (
+                  <button type="button" className="primary" onClick={() => setGroupEdit({ key, txs })}>
+                    {t.transactions.categorizeGroup}
+                  </button>
+                ) : (
+                  <div className="choice-row transfer-classify-row">
+                    <button
+                      type="button"
+                      onClick={() => classifyTransferGroup(txs, "internal", undefined, key)}
+                    >
+                      {t.transactions.transferInternal}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => classifyTransferGroup(txs, "income", undefined, key)}
+                    >
+                      {t.transactions.transferIncome}
+                    </button>
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => setTransferExpenseEdit({ key, txs })}
+                    >
+                      {t.transactions.transferExpense}
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="table-wrap">
                 <table>
@@ -352,7 +446,7 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {!loading && rows.length === 0 && !reviewOnly && !incomeOnly && !hasActiveFilters && (
+      {!loading && rows.length === 0 && !reviewOnly && !incomeOnly && !transfersOnly && !hasActiveFilters && (
         <EmptyState
           title={t.transactions.emptyTitle}
           description={t.transactions.emptyHint}
@@ -376,6 +470,25 @@ export default function TransactionsPage() {
           categories={categorySlugs}
           onClose={() => setGroupEdit(null)}
           onSave={save}
+        />
+      )}
+      {transferExpenseEdit && (
+        <CategoryEditModal
+          txs={transferExpenseEdit.txs}
+          matchText={transferExpenseEdit.key}
+          categories={categorySlugs.filter((c) => !["Income", "Transfers", "Unclear"].includes(c))}
+          onClose={() => setTransferExpenseEdit(null)}
+          onSave={async (category, remember, matchText) => {
+            await moneyApi.classifyTransfer({
+              transaction_ids: transferExpenseEdit.txs.map((x) => x.id),
+              kind: "expense",
+              category,
+              remember,
+              match_text: matchText,
+            });
+            setTransferExpenseEdit(null);
+            await load();
+          }}
         />
       )}
     </div>

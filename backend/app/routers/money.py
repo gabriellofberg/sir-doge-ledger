@@ -58,6 +58,14 @@ class BulkCategoryUpdate(BaseModel):
     match_text: str | None = None
 
 
+class ClassifyTransferIn(BaseModel):
+    transaction_ids: list[int]
+    kind: str  # internal | income | expense
+    category: str | None = None
+    remember: bool = False
+    match_text: str | None = None
+
+
 class BankProfileIn(BaseModel):
     name: str
     mapping_json: dict[str, Any]
@@ -224,6 +232,8 @@ async def import_transactions(
 def transactions(
     needs_review: bool | None = None,
     income_review: bool | None = None,
+    transfer_review: bool | None = None,
+    transfers_only: bool | None = None,
     category: str | None = None,
     search: str | None = None,
     tag: str | None = None,
@@ -237,6 +247,8 @@ def transactions(
     items = money.list_transactions(
         needs_review=needs_review,
         income_review=income_review,
+        transfer_review=transfer_review,
+        transfers_only=transfers_only,
         category=category,
         search=search,
         tag=tag,
@@ -282,6 +294,21 @@ def bulk_category(body: BulkCategoryUpdate) -> dict[str, Any]:
             match_text=body.match_text,
         )
     }
+
+
+@router.post("/transactions/classify-transfer")
+def classify_transfer(body: ClassifyTransferIn) -> dict[str, Any]:
+    try:
+        updated = money.classify_transfer(
+            body.transaction_ids,
+            body.kind,
+            category=body.category,
+            remember=body.remember,
+            match_text=body.match_text,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"updated": updated}
 
 
 @router.get("/imports")

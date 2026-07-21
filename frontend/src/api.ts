@@ -86,6 +86,7 @@ export type Transaction = {
   category_source: string;
   confidence: number;
   needs_review: number;
+  transfer_kind?: string | null;
   group_key?: string;
   tags?: string[];
 };
@@ -136,6 +137,13 @@ export type LifeItem = {
   notes: string | null;
 };
 
+export type TransferSummary = {
+  internal_volume: number;
+  internal_count: number;
+  pending_count: number;
+  pending_volume: number;
+};
+
 export type MoneyStats = {
   transaction_count: number;
   unclear_count: number;
@@ -146,6 +154,7 @@ export type MoneyStats = {
   transfer_volume: number;
   uncategorized_income_count: number;
   recurring_yearly_total: number;
+  transfer_summary?: TransferSummary;
 };
 
 export type CashflowMonth = {
@@ -231,6 +240,8 @@ export const moneyApi = {
   transactions: (params?: {
     needs_review?: boolean;
     income_review?: boolean;
+    transfer_review?: boolean;
+    transfers_only?: boolean;
     category?: string;
     search?: string;
     tag?: string;
@@ -240,6 +251,8 @@ export const moneyApi = {
     const q = new URLSearchParams();
     if (params?.needs_review != null) q.set("needs_review", String(params.needs_review));
     if (params?.income_review != null) q.set("income_review", String(params.income_review));
+    if (params?.transfer_review != null) q.set("transfer_review", String(params.transfer_review));
+    if (params?.transfers_only != null) q.set("transfers_only", String(params.transfers_only));
     if (params?.category) q.set("category", params.category);
     if (params?.search) q.set("search", params.search);
     if (params?.tag) q.set("tag", params.tag);
@@ -248,6 +261,18 @@ export const moneyApi = {
     const s = q.toString();
     return api<{ transactions: Transaction[] }>(`/api/money/transactions${s ? `?${s}` : ""}`);
   },
+  classifyTransfer: (body: {
+    transaction_ids: number[];
+    kind: "internal" | "income" | "expense";
+    category?: string;
+    remember?: boolean;
+    match_text?: string;
+  }) =>
+    api<{ updated: number }>("/api/money/transactions/classify-transfer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   preview: async (file: File) => {
     const fd = new FormData();
     fd.append("file", file);

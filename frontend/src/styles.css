@@ -1616,8 +1616,23 @@ button.linkish {
   cursor: pointer;
 }
 
-.price-hike-main:hover {
-  text-decoration: underline;
+.transfer-classify-row {
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.transfer-review-toggles {
+  margin-bottom: 0.5rem;
+}
+
+.transfers-panel ul {
+  margin: 0.5rem 0;
+  padding-left: 1.1rem;
+}
+
+.transfers-intro {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.9rem;
 }
 
 .alert.bad {

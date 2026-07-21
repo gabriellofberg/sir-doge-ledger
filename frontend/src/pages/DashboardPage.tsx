@@ -317,12 +317,38 @@ export default function DashboardPage() {
                 </Link>
               </li>
             )}
-            {display.transfer_volume > 0 && (
-              <li className="muted">
-                {formatKr(display.transfer_volume)} — {t.overview.transfersExcluded}
+          </ul>
+        </section>
+      )}
+
+      {hasData && display.transfer_summary &&
+        (display.transfer_summary.internal_volume > 0 || display.transfer_summary.pending_count > 0) && (
+        <section className="panel transfers-panel">
+          <h2>{t.overview.transfersTitle}</h2>
+          <p className="muted transfers-intro">{t.overview.transfersIntro}</p>
+          <ul>
+            {display.transfer_summary.internal_volume > 0 && (
+              <li>
+                {tr(t.overview.transfersInternal, {
+                  amount: formatKr(display.transfer_summary.internal_volume),
+                  count: String(display.transfer_summary.internal_count),
+                })}
+              </li>
+            )}
+            {display.transfer_summary.pending_count > 0 && (
+              <li>
+                <Link to="/transactions?transfers=review">
+                  {tr(t.overview.transfersPending, {
+                    amount: formatKr(display.transfer_summary.pending_volume),
+                    count: String(display.transfer_summary.pending_count),
+                  })}
+                </Link>
               </li>
             )}
           </ul>
+          <p>
+            <Link to="/transactions?transfers=1">{t.overview.transfersReviewLink}</Link>
+          </p>
         </section>
       )}
 
