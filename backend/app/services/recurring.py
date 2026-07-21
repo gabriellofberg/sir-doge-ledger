@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from datetime import date
 from statistics import median
 
-
 # Exclude one-off noise and money movement that is not a subscription.
 _EXCLUDED_CATEGORIES = {"Transfers", "Income", "Unclear"}
 

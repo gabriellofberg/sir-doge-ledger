@@ -7,7 +7,6 @@ from typing import Any
 from ..db import get_db
 from .settings import get_setting
 
-
 # Rough guideline % of net income (Swedish personal finance heuristics)
 GUIDELINES: dict[str, tuple[float, float]] = {
     "Housing": (25, 30),

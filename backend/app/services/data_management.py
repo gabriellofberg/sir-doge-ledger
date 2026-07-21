@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..config import UPLOADS_DIR
-from ..db import get_db, now_iso, rows_to_dicts
+from ..db import get_db, rows_to_dicts
 
 BACKUP_VERSION = 1
 
