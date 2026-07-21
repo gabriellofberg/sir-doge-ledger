@@ -34,6 +34,19 @@ const EMPTY_STATS: MoneyStats = {
   recurring_yearly_total: 0,
 };
 
+function formatTooltipValue(value: number | string | readonly (number | string)[] | undefined) {
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === "number" ? formatKr(first) : first ?? "";
+  }
+  if (typeof value === "number") return formatKr(value);
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? formatKr(parsed) : value;
+  }
+  return "";
+}
+
 export default function DashboardPage() {
   const { t, cat } = useI18n();
   const [stats, setStats] = useState<MoneyStats | null>(null);
@@ -361,7 +374,7 @@ export default function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#e8dcc8" />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: number) => formatKr(v)} />
+                <Tooltip formatter={formatTooltipValue} />
                 <Legend />
                 <Bar dataKey={t.overview.income} fill="#2f855a" radius={[6, 6, 0, 0]} />
                 <Bar dataKey={t.overview.spent} fill="#c53030" radius={[6, 6, 0, 0]} />
@@ -376,7 +389,7 @@ export default function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#e8dcc8" />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: number) => formatKr(v)} />
+                <Tooltip formatter={formatTooltipValue} />
                 <Line
                   type="monotone"
                   dataKey={t.overview.net}
@@ -425,9 +438,9 @@ export default function DashboardPage() {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(v: number, _n, item) => {
+                      formatter={(v, _n, item) => {
                         const pct = (item?.payload as { pct?: number })?.pct;
-                        return [`${formatKr(v)}${pct != null ? ` (${pct}%)` : ""}`, ""];
+                        return [`${formatTooltipValue(v)}${pct != null ? ` (${pct}%)` : ""}`, ""];
                       }}
                     />
                   </PieChart>
