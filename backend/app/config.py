@@ -1,5 +1,6 @@
 import os
 import stat
+import sys
 from pathlib import Path
 
 APP_NAME = "SirDoge Ledger"
@@ -10,9 +11,21 @@ MAX_IMPORT_ROWS = 50_000
 MAX_TRANSACTION_LIMIT = 1000
 
 
+def _resolve_install_root() -> Path:
+    if getattr(sys, "frozen", False):
+        if hasattr(sys, "_MEIPASS"):
+            return Path(sys._MEIPASS)
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
+
+
 def _resolve_user_data_dir() -> Path:
     if env := os.environ.get("SIR_DOGE_DATA_DIR"):
         return Path(env).expanduser().resolve()
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            return Path(local) / "sir-doge-ledger"
     xdg = os.environ.get("XDG_DATA_HOME")
     if xdg:
         return Path(xdg) / "sir-doge-ledger"
@@ -27,13 +40,14 @@ def _chmod_private(path: Path, *, is_dir: bool = False) -> None:
         pass
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+INSTALL_ROOT = _resolve_install_root()
+PROJECT_ROOT = INSTALL_ROOT
 USER_DATA_DIR = _resolve_user_data_dir()
 DATA_DIR = USER_DATA_DIR
 UPLOADS_DIR = USER_DATA_DIR / "uploads"
 DB_PATH = USER_DATA_DIR / "sir_doge.db"
-FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
-SAMPLE_DATA_DIR = PROJECT_ROOT / "sample_data"
+FRONTEND_DIST = INSTALL_ROOT / "frontend" / "dist"
+SAMPLE_DATA_DIR = INSTALL_ROOT / "sample_data"
 DEFAULT_PORT = int(os.environ.get("SIR_DOGE_PORT", "8000"))
 
 

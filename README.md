@@ -35,18 +35,21 @@ Version: **0.4** · Repo: [`sir-doge-ledger`](https://github.com/gabriellofberg/
 - Session cookie (HttpOnly, SameSite=strict) after login
 - Mutating requests require `X-Sir-Doge` header (CSRF)
 - Bank uploads mode `0600`; deleted after import by default
-- Data directory: `~/.local/share/sir-doge-ledger/` (mode `0700`)
-- Recovery key (prod): `~/.local/share/sir-doge-ledger/recovery-hint.txt`
+- Data directory (Linux/macOS): `~/.local/share/sir-doge-ledger/` (mode `0700`)
+- Data directory (Windows): `%LOCALAPPDATA%\sir-doge-ledger`
+- Recovery key (prod): `recovery-hint.txt` in the data folder
 - Dev password reset: delete `auth.json` in the data folder, or use the recovery key
 
 **Sibling app:** [HomeSec Scanner](../homesec-scanner) — hacker Doge guards your network; SirDoge retired into finance.
 
 ## Requirements
 
-- Python 3.11+ with `python3-venv`
+- Python 3.11+ with `python3-venv` (Linux/macOS) or venv on Windows
 - Node.js 18+ and npm
 
 ## Start
+
+### Linux / macOS
 
 ```bash
 cd ~/Projects/sir-doge-ledger
@@ -55,13 +58,24 @@ chmod +x run.sh
 ./run.sh prod     # production build (password required)
 ```
 
+### Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\run_windows.ps1 prod
+```
+
 | Mode | URL |
 |------|-----|
 | Dev frontend | http://127.0.0.1:5173/ |
 | Prod / API | http://127.0.0.1:8000/ |
 | Health | http://127.0.0.1:8000/api/health |
 
-Data: `~/.local/share/sir-doge-ledger/`
+**Data:** Linux/macOS `~/.local/share/sir-doge-ledger/` · Windows `%LOCALAPPDATA%\sir-doge-ledger`
+
+## Windows installer (.exe)
+
+Build a portable bundle and `SirDogeLedger-Setup.exe` via GitHub Actions or locally on Windows — see [docs/BUILD_WINDOWS.md](docs/BUILD_WINDOWS.md).
 
 ## Quick tour
 
