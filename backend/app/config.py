@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "SirDoge Ledger"
-APP_VERSION = "0.4.0"
+APP_VERSION = "1.0.0"
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_IMPORT_ROWS = 50_000
