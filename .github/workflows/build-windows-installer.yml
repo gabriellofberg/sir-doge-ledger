@@ -31,7 +31,9 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: |
-          npm install
+          npm ci
+          $rollupVersion = node -p "require('./package-lock.json').packages['node_modules/rollup'].optionalDependencies['@rollup/rollup-win32-x64-msvc']"
+          npm install --no-save "@rollup/rollup-win32-x64-msvc@$rollupVersion"
           npm run build
 
       - name: Install Python deps and run tests
