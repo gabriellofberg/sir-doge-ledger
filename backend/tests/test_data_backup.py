@@ -1,5 +1,7 @@
 """Backup export/restore round-trip tests."""
 
+import pytest
+
 from app.db import get_db, now_iso
 from app.services.data_management import export_backup_json, import_backup_json, wipe_all_data
 from app.services.money import tx_hash
@@ -145,11 +147,8 @@ def test_legacy_backup_without_new_tables_imports():
 
 
 def test_import_rejects_invalid_backup():
-    try:
+    with pytest.raises(ValueError, match="SirDoge"):
         import_backup_json({"app": "other-app"})
-        raise AssertionError("expected ValueError")
-    except ValueError as exc:
-        assert "SirDoge" in str(exc)
 
 
 def test_import_backup_api():
