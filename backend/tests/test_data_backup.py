@@ -147,7 +147,7 @@ def test_legacy_backup_without_new_tables_imports():
 def test_import_rejects_invalid_backup():
     try:
         import_backup_json({"app": "other-app"})
-        assert False, "expected ValueError"
+        raise AssertionError("expected ValueError")
     except ValueError as exc:
         assert "SirDoge" in str(exc)
 

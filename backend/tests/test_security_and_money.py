@@ -77,8 +77,8 @@ def test_resolve_upload_rejects_traversal(tmp_path):
 def test_auth_required(monkeypatch):
     from fastapi.testclient import TestClient
 
-    from app.main import app
     import app.services.auth as auth_mod
+    from app.main import app
 
     monkeypatch.setattr(auth_mod, "auth_enabled", lambda: True)
     monkeypatch.setattr(auth_mod, "session_matches", lambda _t: False)
