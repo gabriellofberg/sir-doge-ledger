@@ -9,7 +9,7 @@ from typing import Any
 
 from ..config import MAX_TRANSACTION_LIMIT, MAX_UPLOAD_BYTES
 from ..db import get_db, now_iso, rows_to_dicts
-from .categorize import CategoryResult, categorize, ensure_category, _DEFAULT_FOODORA_THRESHOLD, _HIGH
+from .categorize import categorize, ensure_category, _DEFAULT_FOODORA_THRESHOLD
 from .import_parse import ColumnMapping, guess_mapping, parse_all_rows, read_tabular
 from .import_sessions import delete_session, get_session_path
 from .normalize import clean_match_text, group_key, merchant_key, normalize_merchant, phrase_matches
@@ -18,6 +18,15 @@ from .settings import get_setting
 
 TRANSFER_CAT = "Transfers"
 INCOME_CAT = "Income"
+
+_SORT_OPTIONS: dict[str, str] = {
+    "date_desc": "t.tx_date DESC, t.id DESC",
+    "date_asc": "t.tx_date ASC, t.id ASC",
+    "amount_desc": "ABS(t.amount) DESC, t.id DESC",
+    "amount_asc": "ABS(t.amount) ASC, t.id ASC",
+    "description_asc": "t.raw_description ASC, t.id ASC",
+    "description_desc": "t.raw_description DESC, t.id DESC",
+}
 
 
 def tx_hash(tx_date: str, amount: float, description: str) -> str:
@@ -289,11 +298,13 @@ def list_transactions(
     search: str | None = None,
     tag: str | None = None,
     month: str | None = None,
+    sort: str = "date_desc",
     limit: int = 500,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     limit = max(1, min(limit, MAX_TRANSACTION_LIMIT))
     offset = max(0, offset)
+    order_by = _SORT_OPTIONS.get(sort, _SORT_OPTIONS["date_desc"])
     clauses: list[str] = []
     params: list[Any] = []
     if needs_review is True:
@@ -329,7 +340,7 @@ def list_transactions(
             ) AS tags_csv
             FROM transactions t
             {where}
-            ORDER BY t.tx_date DESC, t.id DESC
+            ORDER BY {order_by}
             LIMIT ? OFFSET ?
             """,
             params,

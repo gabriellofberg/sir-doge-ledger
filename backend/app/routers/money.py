@@ -165,6 +165,7 @@ def transactions(
     search: str | None = None,
     tag: str | None = None,
     month: str | None = None,
+    sort: str = "date_desc",
     limit: int = 500,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -177,6 +178,7 @@ def transactions(
         search=search,
         tag=tag,
         month=month,
+        sort=sort,
         limit=limit,
         offset=offset,
     )

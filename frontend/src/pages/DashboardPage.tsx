@@ -323,17 +323,27 @@ export default function DashboardPage() {
                     <span>{t.overview.chartCategoryTotal}</span>
                     <strong>{formatKr(categoryTotal)}</strong>
                   </li>
-                  {pieData.map((b, i) => (
-                    <li key={b.category}>
-                      <span
-                        className="swatch"
-                        style={{ background: CHART_COLORS[i % CHART_COLORS.length] }}
-                      />
-                      <span className="cat-name">{b.label}</span>
-                      <span className="cat-pct">{b.pct}%</span>
-                      <strong>{formatKr(b.total)}</strong>
-                    </li>
-                  ))}
+                  {pieData.map((b, i) => {
+                    const txParams = new URLSearchParams({ category: b.category, sort: "amount_desc" });
+                    if (categoryMonth) txParams.set("month", categoryMonth);
+                    return (
+                      <li key={b.category}>
+                        <Link
+                          to={`/transactions?${txParams}`}
+                          className="category-legend-link"
+                          title={t.overview.chartCategoryDrilldown}
+                        >
+                          <span
+                            className="swatch"
+                            style={{ background: CHART_COLORS[i % CHART_COLORS.length] }}
+                          />
+                          <span className="cat-name">{b.label}</span>
+                          <span className="cat-pct">{b.pct}%</span>
+                          <strong>{formatKr(b.total)}</strong>
+                        </Link>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             </section>

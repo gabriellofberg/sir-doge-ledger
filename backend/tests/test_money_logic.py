@@ -1,4 +1,5 @@
 from app.services.categorize import categorize
+from app.services.money import list_transactions, tx_hash
 from app.services.normalize import (
     clean_match_text,
     group_key,
@@ -153,3 +154,69 @@ def test_foodora_learned_rule_overrides_threshold():
     r = categorize("Kortköp 260710 Foodora", -999.0, rules, foodora_threshold=350)
     assert r.category == "Restaurants"
     assert r.source == "learned"
+
+
+def _seed_tx(conn, *, tx_date: str, amount: float, desc: str, category: str) -> None:
+    from app.db import now_iso
+
+    conn.execute(
+        "INSERT INTO imports (filename, imported_at, row_count) VALUES ('t', ?, 1)",
+        (now_iso(),),
+    )
+    iid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        """
+        INSERT INTO transactions (
+            import_id, tx_date, amount, raw_description, normalized_merchant,
+            category, category_source, confidence, needs_review, tx_hash, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'auto', 0.9, 0, ?, ?)
+        """,
+        (
+            iid,
+            tx_date,
+            amount,
+            desc,
+            desc.upper(),
+            category,
+            tx_hash(tx_date, amount, desc),
+            now_iso(),
+        ),
+    )
+
+
+def test_list_transactions_filters_month_and_category():
+    from app.db import get_db
+
+    with get_db() as conn:
+        conn.execute("DELETE FROM transactions")
+        _seed_tx(conn, tx_date="2026-05-10", amount=-200, desc="ZALANDO", category="Shopping")
+        _seed_tx(conn, tx_date="2026-05-20", amount=-50, desc="ICA", category="Groceries")
+        _seed_tx(conn, tx_date="2026-06-01", amount=-300, desc="HM", category="Shopping")
+
+    rows = list_transactions(month="2026-05", category="Shopping")
+    assert len(rows) == 1
+    assert rows[0]["raw_description"] == "ZALANDO"
+
+
+def test_list_transactions_sort_amount_desc():
+    from app.db import get_db
+
+    with get_db() as conn:
+        conn.execute("DELETE FROM transactions")
+        _seed_tx(conn, tx_date="2026-05-01", amount=-100, desc="SMALL", category="Shopping")
+        _seed_tx(conn, tx_date="2026-05-02", amount=-900, desc="BIG", category="Shopping")
+
+    rows = list_transactions(category="Shopping", sort="amount_desc")
+    assert [r["raw_description"] for r in rows] == ["BIG", "SMALL"]
+
+
+def test_list_transactions_sort_date_asc():
+    from app.db import get_db
+
+    with get_db() as conn:
+        conn.execute("DELETE FROM transactions")
+        _seed_tx(conn, tx_date="2026-05-31", amount=-10, desc="LATE", category="Shopping")
+        _seed_tx(conn, tx_date="2026-05-01", amount=-10, desc="EARLY", category="Shopping")
+
+    rows = list_transactions(category="Shopping", sort="date_asc")
+    assert [r["raw_description"] for r in rows] == ["EARLY", "LATE"]

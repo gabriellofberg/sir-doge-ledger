@@ -3,22 +3,53 @@ import { useSearchParams } from "react-router-dom";
 import EmptyState from "../components/EmptyState";
 import { formatKr, moneyApi, type Transaction } from "../api";
 import CategoryEditModal from "../components/CategoryEditModal";
-import { useI18n } from "../i18n";
+import { CATEGORIES } from "../categories";
+import { useI18n, tr } from "../i18n";
 
 type GroupEdit = { key: string; txs: Transaction[] };
+
+const SORT_OPTIONS = [
+  "date_desc",
+  "date_asc",
+  "amount_desc",
+  "amount_asc",
+  "description_asc",
+  "description_desc",
+] as const;
+
+type SortOption = (typeof SORT_OPTIONS)[number];
+
+function isSortOption(v: string | null): v is SortOption {
+  return SORT_OPTIONS.includes(v as SortOption);
+}
 
 export default function TransactionsPage() {
   const { t, cat } = useI18n();
   const [params, setParams] = useSearchParams();
   const reviewOnly = params.get("review") === "1";
   const incomeOnly = params.get("income") === "1";
-  const categoryFilter = params.get("category") || undefined;
+  const categoryFilter = params.get("category") || "";
+  const monthFilter = params.get("month") || "";
+  const sortParam = params.get("sort");
+  const sortFilter: SortOption = isSortOption(sortParam) ? sortParam : "date_desc";
+  const searchParam = params.get("search") || "";
   const [rows, setRows] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [monthOptions, setMonthOptions] = useState<string[]>([]);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [groupEdit, setGroupEdit] = useState<GroupEdit | null>(null);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [searchDraft, setSearchDraft] = useState(searchParam);
+
+  useEffect(() => {
+    setSearchDraft(searchParam);
+  }, [searchParam]);
+
+  useEffect(() => {
+    moneyApi.cashflow(24).then((cf) => {
+      setMonthOptions(cf.months.map((m) => m.month));
+    });
+  }, []);
 
   const load = () => {
     setLoading(true);
@@ -26,8 +57,10 @@ export default function TransactionsPage() {
       moneyApi.transactions({
         needs_review: reviewOnly ? true : undefined,
         income_review: incomeOnly ? true : undefined,
-        category: categoryFilter,
-        search: search.trim() || undefined,
+        category: categoryFilter || undefined,
+        month: monthFilter || undefined,
+        sort: sortFilter,
+        search: searchParam.trim() || undefined,
       }),
       moneyApi.categories(),
     ])
@@ -40,7 +73,28 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     load();
-  }, [reviewOnly, incomeOnly, categoryFilter, search]);
+  }, [reviewOnly, incomeOnly, categoryFilter, monthFilter, sortFilter, searchParam]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const trimmed = searchDraft.trim();
+      if (trimmed === searchParam) return;
+      const next = new URLSearchParams(params);
+      if (trimmed) next.set("search", trimmed);
+      else next.delete("search");
+      setParams(next, { replace: true });
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [searchDraft, searchParam, params, setParams]);
+
+  function patchParams(patch: Record<string, string | null>) {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    setParams(next);
+  }
 
   const title = useMemo(() => {
     if (incomeOnly) return t.transactions.incomeReview;
@@ -48,6 +102,22 @@ export default function TransactionsPage() {
     if (categoryFilter) return `${t.transactions.categoryPrefix} ${cat(categoryFilter)}`;
     return t.transactions.all;
   }, [reviewOnly, incomeOnly, categoryFilter, t, cat]);
+
+  const hasActiveFilters = Boolean(
+    categoryFilter || monthFilter || searchParam || sortFilter !== "date_desc",
+  );
+
+  const summary = useMemo(() => {
+    const total = rows.reduce((sum, row) => sum + Math.abs(row.amount), 0);
+    return { count: rows.length, total };
+  }, [rows]);
+
+  const summaryContext = useMemo(() => {
+    const parts: string[] = [];
+    if (monthFilter) parts.push(monthFilter);
+    if (categoryFilter) parts.push(cat(categoryFilter));
+    return parts.join(" · ");
+  }, [monthFilter, categoryFilter, cat]);
 
   const groups = useMemo(() => {
     if (!reviewOnly) return [];
@@ -99,8 +169,20 @@ export default function TransactionsPage() {
     );
   }
 
+  const sortLabel = (key: SortOption) => {
+    const labels: Record<SortOption, string> = {
+      date_desc: t.transactions.sortDateDesc,
+      date_asc: t.transactions.sortDateAsc,
+      amount_desc: t.transactions.sortAmountDesc,
+      amount_asc: t.transactions.sortAmountAsc,
+      description_asc: t.transactions.sortDescriptionAsc,
+      description_desc: t.transactions.sortDescriptionDesc,
+    };
+    return labels[key];
+  };
+
   return (
-    <div className="stack">
+    <div className="stack transactions-page">
       <div className="row-between">
         <h1>{title}</h1>
         <div className="filter-row">
@@ -137,15 +219,73 @@ export default function TransactionsPage() {
         </div>
       </div>
       <p className="lede">{reviewOnly ? t.transactions.reviewLede : t.transactions.lede}</p>
-      <label className="search-inline">
-        {t.transactions.search}
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t.transactions.searchPlaceholder}
-        />
-      </label>
+
+      <div className="tx-toolbar-sticky">
+        <section className="panel tx-filters" aria-label={t.transactions.filtersLabel}>
+          <label>
+            <span className="label">{t.transactions.filterMonth}</span>
+            <select
+              value={monthFilter}
+              onChange={(e) => patchParams({ month: e.target.value || null })}
+            >
+              <option value="">{t.transactions.filterAll}</option>
+              {[...monthOptions].reverse().map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="label">{t.transactions.filterCategory}</span>
+            <select
+              value={categoryFilter}
+              onChange={(e) => patchParams({ category: e.target.value || null })}
+            >
+              <option value="">{t.transactions.filterAll}</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {cat(c)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="label">{t.transactions.filterSort}</span>
+            <select
+              value={sortFilter}
+              onChange={(e) => patchParams({ sort: e.target.value === "date_desc" ? null : e.target.value })}
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {sortLabel(opt)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="tx-search">
+            <span className="label">{t.transactions.search}</span>
+            <input
+              type="search"
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              placeholder={t.transactions.searchPlaceholder}
+            />
+          </label>
+        </section>
+
+        {!loading && rows.length > 0 && (hasActiveFilters || reviewOnly || incomeOnly) && (
+          <p className="tx-summary">
+            <strong>
+              {tr(t.transactions.filterSummary, {
+                count: String(summary.count),
+                total: formatKr(summary.total),
+              })}
+            </strong>
+            {summaryContext ? <span className="muted"> ({summaryContext})</span> : null}
+          </p>
+        )}
+      </div>
 
       {reviewOnly && !loading && groups.length > 0 ? (
         <div className="stack review-groups">
@@ -214,7 +354,7 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {!loading && rows.length === 0 && !reviewOnly && !incomeOnly && !categoryFilter && (
+      {!loading && rows.length === 0 && !reviewOnly && !incomeOnly && !hasActiveFilters && (
         <EmptyState
           title={t.transactions.emptyTitle}
           description={t.transactions.emptyHint}

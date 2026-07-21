@@ -157,6 +157,7 @@ export const moneyApi = {
     search?: string;
     tag?: string;
     month?: string;
+    sort?: string;
   }) => {
     const q = new URLSearchParams();
     if (params?.needs_review != null) q.set("needs_review", String(params.needs_review));
@@ -165,6 +166,7 @@ export const moneyApi = {
     if (params?.search) q.set("search", params.search);
     if (params?.tag) q.set("tag", params.tag);
     if (params?.month) q.set("month", params.month);
+    if (params?.sort) q.set("sort", params.sort);
     const s = q.toString();
     return api<{ transactions: Transaction[] }>(`/api/money/transactions${s ? `?${s}` : ""}`);
   },
