@@ -51,8 +51,15 @@ SAMPLE_DATA_DIR = INSTALL_ROOT / "sample_data"
 DEFAULT_PORT = int(os.environ.get("SIR_DOGE_PORT", "8000"))
 
 
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").lower() in ("1", "true", "yes")
+
+
 def is_dev_open() -> bool:
-    return os.environ.get("SIR_DOGE_DEV", "").lower() in ("1", "true", "yes")
+    # Prod always wins if both flags are set (defense in depth).
+    if _env_truthy("SIR_DOGE_PROD"):
+        return False
+    return _env_truthy("SIR_DOGE_DEV")
 
 
 def demo_db_path() -> Path:

@@ -13,10 +13,20 @@ import webbrowser
 from pathlib import Path
 
 
+def _parse_port(raw: str, *, name: str) -> int:
+    try:
+        port = int(raw)
+    except ValueError as exc:
+        raise SystemExit(f"Invalid {name}={raw!r}") from exc
+    if not (1 <= port <= 65535):
+        raise SystemExit(f"{name} out of range: {port}")
+    return port
+
+
 def _find_free_port(start: int = 8000) -> int:
     env_port = os.environ.get("SIR_DOGE_PORT")
     if env_port:
-        return int(env_port)
+        return _parse_port(env_port, name="SIR_DOGE_PORT")
     for port in range(start, start + 50):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
@@ -46,7 +56,9 @@ def main() -> int:
         os.chdir(root)
 
     port = _find_free_port()
-    frontend_port = int(os.environ.get("FRONTEND_PORT", "5173"))
+    frontend_port = _parse_port(
+        os.environ.get("FRONTEND_PORT", "5173"), name="FRONTEND_PORT"
+    )
     os.environ["SIR_DOGE_PORT"] = str(port)
 
     if frozen:
@@ -61,12 +73,16 @@ def main() -> int:
             if backend_in_bundle.is_dir() and str(backend_in_bundle) not in sys.path:
                 sys.path.insert(0, str(backend_in_bundle))
     else:
-        os.environ.setdefault("SIR_DOGE_DEV", "1")
+        if os.environ.get("SIR_DOGE_PROD", "").lower() in ("1", "true", "yes"):
+            # Explicit prod: never leave open auth via a leftover SIR_DOGE_DEV.
+            os.environ.pop("SIR_DOGE_DEV", None)
+        else:
+            os.environ.setdefault("SIR_DOGE_DEV", "1")
         os.environ["PYTHONPATH"] = str(root / "backend") + os.pathsep + os.environ.get(
             "PYTHONPATH", ""
         )
 
-    prod = frozen or os.environ.get("SIR_DOGE_PROD") == "1"
+    prod = frozen or os.environ.get("SIR_DOGE_PROD", "").lower() in ("1", "true", "yes")
 
     print("=" * 54)
     print(" SirDoge Ledger")

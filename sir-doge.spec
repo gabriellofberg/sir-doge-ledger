@@ -6,8 +6,14 @@ from pathlib import Path
 block_cipher = None
 ROOT = Path(SPECPATH)
 
+_frontend_dist = ROOT / "frontend" / "dist"
+if not (_frontend_dist / "index.html").is_file():
+    raise SystemExit(
+        "frontend/dist is missing — run `npm run build` in frontend/ before PyInstaller"
+    )
+
 datas = [
-    (str(ROOT / "frontend" / "dist"), "frontend/dist"),
+    (str(_frontend_dist), "frontend/dist"),
     (str(ROOT / "sample_data"), "sample_data"),
 ]
 
@@ -78,7 +84,8 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX increases antivirus false positives on unsigned Windows builds.
+    upx=False,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -93,7 +100,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="SirDogeLedger",
 )

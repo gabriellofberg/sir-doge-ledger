@@ -91,10 +91,21 @@ if (-not $InstallerOnly) {
     }
 
     Write-Host "Running tests..."
+    $prevDataDir = $env:SIR_DOGE_DATA_DIR
     $env:SIR_DOGE_DATA_DIR = Join-Path $env:TEMP "sir-doge-build-test"
-    & $PythonExe -m pytest (Join-Path $Root "backend\tests") -q
-    if ($LASTEXITCODE -ne 0) {
-        throw "pytest failed."
+    try {
+        & $PythonExe -m pytest (Join-Path $Root "backend\tests") -q
+        if ($LASTEXITCODE -ne 0) {
+            throw "pytest failed."
+        }
+    }
+    finally {
+        if ($null -eq $prevDataDir) {
+            Remove-Item Env:SIR_DOGE_DATA_DIR -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:SIR_DOGE_DATA_DIR = $prevDataDir
+        }
     }
 
     Write-Host "Building PyInstaller bundle..."
