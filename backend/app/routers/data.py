@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
+from ..config import MAX_UPLOAD_BYTES
 from ..services import data_management
 
 router = APIRouter(prefix="/api/data", tags=["data"])
+
+_MAX_BACKUP_BYTES = MAX_UPLOAD_BYTES
 
 
 class WipeRequest(BaseModel):
@@ -33,6 +36,21 @@ def export_backup_json() -> Response:
         media_type="application/json; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="sir-doge-backup.json"'},
     )
+
+
+@router.post("/import/backup")
+async def import_backup(file: UploadFile = File(...)) -> dict:
+    raw = await file.read()
+    if len(raw) > _MAX_BACKUP_BYTES:
+        raise HTTPException(413, "Backup file too large")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "Invalid JSON backup file") from exc
+    try:
+        return data_management.import_backup_json(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/wipe")

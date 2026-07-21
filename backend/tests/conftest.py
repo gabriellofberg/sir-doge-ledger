@@ -32,4 +32,8 @@ def isolated_data_dir(tmp_path, monkeypatch):
 
     ensure_dirs()
     init_db()
+    from app.services.categories import seed_categories
+
+    with dbmod.get_db() as conn:
+        seed_categories(conn)
     yield

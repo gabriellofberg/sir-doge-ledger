@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import ChartPlaceholder from "../components/ChartPlaceholder";
 import EmptyState from "../components/EmptyState";
-import { formatKr, moneyApi, type CashflowMonth, type MoneyStats } from "../api";
+import { formatKr, moneyApi, type CashflowMonth, type Insight, type MoneyStats } from "../api";
 import { useI18n, tr } from "../i18n";
 
 const CHART_COLORS = ["#1e3a5f", "#2f855a", "#c53030", "#b8953a", "#4a5568", "#805ad5", "#319795"];
@@ -38,32 +38,50 @@ export default function DashboardPage() {
   const { t, cat } = useI18n();
   const [stats, setStats] = useState<MoneyStats | null>(null);
   const [cashflow, setCashflow] = useState<CashflowMonth[]>([]);
-  const [breakdown, setBreakdown] = useState<Array<{ category: string; total: number }>>([]);
+  const [breakdown, setBreakdown] = useState<Array<{ category: string; total: number; tx_count?: number }>>([]);
   const [months, setMonths] = useState(12);
+  const [categoryMonth, setCategoryMonth] = useState<string>(""); // "" = whole selected range
   const [loading, setLoading] = useState(true);
-  const [alerts, setAlerts] = useState<Array<Record<string, unknown>>>([]);
+  const [insights, setInsights] = useState<Insight[]>([]);
 
   useEffect(() => {
     setLoading(true);
+    // Reset month pick when range changes if the month falls outside the new cashflow
+    setCategoryMonth("");
     Promise.all([
       moneyApi.completeness(),
       moneyApi.cashflow(months),
-      moneyApi.breakdown("spent"),
-      moneyApi.alerts(),
+      moneyApi.breakdown("spent", { months }),
+      moneyApi.insights(months),
     ])
-      .then(([s, cf, bd, al]) => {
+      .then(([s, cf, bd, ins]) => {
         setStats(s);
         setCashflow(cf.months);
         setBreakdown(
           bd.categories.map((c) => ({
             category: c.category,
             total: Math.abs(Number(c.total)),
+            tx_count: c.tx_count,
           })),
         );
-        setAlerts([...al.budget, ...al.price, ...al.recommendations]);
+        setInsights(ins.insights);
       })
       .finally(() => setLoading(false));
   }, [months]);
+
+  useEffect(() => {
+    if (loading) return;
+    const opts = categoryMonth ? { month: categoryMonth } : { months };
+    moneyApi.breakdown("spent", opts).then((bd) => {
+      setBreakdown(
+        bd.categories.map((c) => ({
+          category: c.category,
+          total: Math.abs(Number(c.total)),
+          tx_count: c.tx_count,
+        })),
+      );
+    });
+  }, [categoryMonth]);
 
   const barData = useMemo(
     () =>
@@ -76,37 +94,136 @@ export default function DashboardPage() {
     [cashflow, t],
   );
 
+  const categoryTotal = useMemo(
+    () => breakdown.reduce((sum, b) => sum + b.total, 0),
+    [breakdown],
+  );
+
+  const pieData = useMemo(
+    () =>
+      [...breakdown]
+        .sort((a, b) => b.total - a.total)
+        .map((b) => ({
+          ...b,
+          label: cat(b.category),
+          pct: categoryTotal > 0 ? Math.round((b.total / categoryTotal) * 100) : 0,
+        })),
+    [breakdown, cat, categoryTotal],
+  );
+
   const display = stats ?? EMPTY_STATS;
   const hasData = display.transaction_count > 0;
 
   if (loading) return <p className="muted page-loading">{t.overview.loading}</p>;
 
-  function alertText(a: Record<string, unknown>): string {
-    if (a.kind === "housing_high") return tr(t.overview.alertHousing, { pct: String(a.pct) });
-    if (a.kind === "over_budget")
-      return tr(t.overview.alertOverBudget, {
-        category: cat(String(a.category)),
-        spent: String(a.spent),
-        limit: String(a.limit),
-      });
-    if (a.kind === "spending_up")
-      return tr(t.overview.alertSpendingUp, {
-        category: cat(String(a.category)),
-        pct: String(a.pct_change),
-      });
-    if (a.kind === "spending_down")
-      return tr(t.overview.alertSpendingDown, {
-        category: cat(String(a.category)),
-        pct: String(Math.abs(Number(a.pct_change))),
-      });
-    if (a.kind === "set_income") return t.overview.alertSetIncome;
-    if (a.normalized_merchant)
-      return tr(t.overview.alertPrice, {
-        merchant: String(a.normalized_merchant),
-        old: String(a.old_amount),
-        new: String(a.new_amount),
-      });
-    return "";
+  function insightContent(insight: Insight): { title: string; body: string } | null {
+    const p = insight.params;
+    const kind = insight.kind;
+    if (kind === "over_budget")
+      return {
+        title: cat(String(p.category)),
+        body: tr(t.overview.alertOverBudget, {
+          category: cat(String(p.category)),
+          spent: String(p.spent),
+          limit: String(p.limit),
+        }),
+      };
+    if (kind === "spending_up")
+      return {
+        title: cat(String(p.category)),
+        body: tr(t.overview.alertSpendingUp, {
+          category: cat(String(p.category)),
+          pct: String(p.pct_change),
+        }),
+      };
+    if (kind === "spending_down")
+      return {
+        title: cat(String(p.category)),
+        body: tr(t.overview.alertSpendingDown, {
+          category: cat(String(p.category)),
+          pct: String(Math.abs(Number(p.pct_change))),
+        }),
+      };
+    if (kind === "savings_scenario")
+      return {
+        title: t.overview.insightSavingsTitle,
+        body: tr(t.overview.insightSavingsBody, {
+          category: cat(String(p.category)),
+          spent: String(p.spent),
+          months: String(p.months),
+          pct: String(p.reduction_pct),
+          savings: String(p.savings),
+        }),
+      };
+    if (kind === "top_merchant")
+      return {
+        title: t.overview.insightTopMerchantTitle,
+        body: tr(t.overview.insightTopMerchantBody, {
+          merchant: String(p.merchant),
+          spent: String(p.spent),
+          pct: String(p.pct),
+        }),
+      };
+    if (kind === "category_share")
+      return {
+        title: t.overview.insightCategoryShareTitle,
+        body: tr(t.overview.insightCategoryShareBody, {
+          category: cat(String(p.category)),
+          pct: String(p.pct),
+          spent: String(p.spent),
+        }),
+      };
+    if (kind === "income_share")
+      return {
+        title: t.overview.insightIncomeShareTitle,
+        body: tr(t.overview.insightIncomeShareBody, {
+          category: cat(String(p.category)),
+          pct: String(p.pct),
+          guideline: String(p.guideline_hi),
+        }),
+      };
+    if (kind === "mom_trend") {
+      const up = p.direction === "up";
+      return {
+        title: up ? t.overview.insightMomUpTitle : t.overview.insightMomDownTitle,
+        body: tr(up ? t.overview.insightMomUpBody : t.overview.insightMomDownBody, {
+          pct: String(p.pct),
+          month: String(p.month),
+        }),
+      };
+    }
+    if (kind === "yoy_change")
+      return {
+        title: t.overview.insightYoyTitle,
+        body: tr(t.overview.insightYoyBody, {
+          category: cat(String(p.category)),
+          pct: String(p.pct),
+          prevYear: String(p.prev_year),
+        }),
+      };
+    if (kind === "recurring_burden")
+      return {
+        title: t.overview.insightRecurringTitle,
+        body: tr(t.overview.insightRecurringBody, {
+          total: String(p.total),
+          names: String(p.names),
+        }),
+      };
+    if (kind === "best_month")
+      return {
+        title: t.overview.insightBestMonthTitle,
+        body: tr(t.overview.insightBestMonthBody, {
+          month: String(p.month),
+          net: String(p.net),
+        }),
+      };
+    return null;
+  }
+
+  function insightSeverityClass(severity: string): string {
+    if (severity === "bad" || severity === "warn") return "warn";
+    if (severity === "good") return "good";
+    return "info";
   }
 
   return (
@@ -152,15 +269,21 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {alerts.length > 0 && (
-        <section className="panel alerts-panel">
+      {insights.length > 0 && (
+        <section className="panel alerts-panel insights-panel">
           <h2>{t.overview.insights}</h2>
-          {alerts.slice(0, 6).map((a, i) => {
-            const text = alertText(a);
-            if (!text) return null;
+          {insights.map((insight, i) => {
+            const content = insightContent(insight);
+            if (!content) return null;
             return (
-              <div key={i} className={`alert ${String(a.severity ?? "warn")}`}>
-                {text}
+              <div key={i} className={`insight-card alert ${insightSeverityClass(insight.severity)}`}>
+                <strong className="insight-title">{content.title}</strong>
+                <p className="insight-body">{content.body}</p>
+                {insight.link && (
+                  <Link to={insight.link} className="insight-link">
+                    {t.overview.insightViewTx}
+                  </Link>
+                )}
               </div>
             );
           })}
@@ -194,12 +317,38 @@ export default function DashboardPage() {
                 </Link>
               </li>
             )}
-            {display.transfer_volume > 0 && (
-              <li className="muted">
-                {formatKr(display.transfer_volume)} — {t.overview.transfersExcluded}
+          </ul>
+        </section>
+      )}
+
+      {hasData && display.transfer_summary &&
+        (display.transfer_summary.internal_volume > 0 || display.transfer_summary.pending_count > 0) && (
+        <section className="panel transfers-panel">
+          <h2>{t.overview.transfersTitle}</h2>
+          <p className="muted transfers-intro">{t.overview.transfersIntro}</p>
+          <ul>
+            {display.transfer_summary.internal_volume > 0 && (
+              <li>
+                {tr(t.overview.transfersInternal, {
+                  amount: formatKr(display.transfer_summary.internal_volume),
+                  count: String(display.transfer_summary.internal_count),
+                })}
+              </li>
+            )}
+            {display.transfer_summary.pending_count > 0 && (
+              <li>
+                <Link to="/transactions?transfers=review">
+                  {tr(t.overview.transfersPending, {
+                    amount: formatKr(display.transfer_summary.pending_volume),
+                    count: String(display.transfer_summary.pending_count),
+                  })}
+                </Link>
               </li>
             )}
           </ul>
+          <p>
+            <Link to="/transactions?transfers=1">{t.overview.transfersReviewLink}</Link>
+          </p>
         </section>
       )}
 
@@ -239,30 +388,78 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </section>
 
-          {breakdown.length > 0 && (
+          {pieData.length > 0 && (
             <section className="panel chart-panel chart-wide">
-              <h2>{t.overview.chartCategory}</h2>
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie
-                    data={breakdown.map((b) => ({ ...b, category: cat(b.category) }))}
-                    dataKey="total"
-                    nameKey="category"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={95}
-                    label={({ category, total }: { category: string; total: number }) =>
-                      `${category}: ${formatKr(total)}`
-                    }
+              <div className="chart-panel-head">
+                <h2>{t.overview.chartCategory}</h2>
+                <label className="category-month-picker">
+                  <span className="label">{t.overview.chartCategoryMonth}</span>
+                  <select
+                    value={categoryMonth}
+                    onChange={(e) => setCategoryMonth(e.target.value)}
                   >
-                    {breakdown.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    <option value="">{t.overview.chartCategoryAll} ({months} {t.overview.months})</option>
+                    {[...cashflow].reverse().map((m) => (
+                      <option key={m.month} value={m.month}>
+                        {m.month}
+                      </option>
                     ))}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => formatKr(v)} />
-                </PieChart>
-              </ResponsiveContainer>
+                  </select>
+                </label>
+              </div>
+              <div className="category-breakdown">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="total"
+                      nameKey="label"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={1}
+                    >
+                      {pieData.map((_, i) => (
+                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: number, _n, item) => {
+                        const pct = (item?.payload as { pct?: number })?.pct;
+                        return [`${formatKr(v)}${pct != null ? ` (${pct}%)` : ""}`, ""];
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <ul className="category-legend">
+                  <li className="category-legend-total">
+                    <span>{t.overview.chartCategoryTotal}</span>
+                    <strong>{formatKr(categoryTotal)}</strong>
+                  </li>
+                  {pieData.map((b, i) => {
+                    const txParams = new URLSearchParams({ category: b.category, sort: "amount_desc" });
+                    if (categoryMonth) txParams.set("month", categoryMonth);
+                    return (
+                      <li key={b.category}>
+                        <Link
+                          to={`/transactions?${txParams}`}
+                          className="category-legend-link"
+                          title={t.overview.chartCategoryDrilldown}
+                        >
+                          <span
+                            className="swatch"
+                            style={{ background: CHART_COLORS[i % CHART_COLORS.length] }}
+                          />
+                          <span className="cat-name">{b.label}</span>
+                          <span className="cat-pct">{b.pct}%</span>
+                          <strong>{formatKr(b.total)}</strong>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             </section>
           )}
         </div>

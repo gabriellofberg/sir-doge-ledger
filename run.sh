@@ -52,13 +52,25 @@ open_browser() {
   python -c "
 import threading, time, webbrowser
 def open_url():
-    time.sleep(2)
+    time.sleep(1)
     webbrowser.open('$url')
 threading.Thread(target=open_url, daemon=True).start()
 " &
 }
 
-open_browser "http://127.0.0.1:${FRONTEND_PORT}/"
+wait_for_backend() {
+  local url="http://127.0.0.1:${BACKEND_PORT}/api/health"
+  echo "Waiting for backend..."
+  for _ in $(seq 1 60); do
+    if curl -sf "$url" >/dev/null 2>&1; then
+      echo "Backend ready."
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "Backend did not start on ${BACKEND_PORT} — check errors above." >&2
+  return 1
+}
 
 cleanup() {
   if [ -n "${BACKEND_PID:-}" ]; then
@@ -70,4 +82,6 @@ trap cleanup EXIT INT TERM
 
 uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$BACKEND_PORT" --reload &
 BACKEND_PID=$!
+wait_for_backend
+open_browser "http://127.0.0.1:${FRONTEND_PORT}/"
 cd frontend && npm run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT"

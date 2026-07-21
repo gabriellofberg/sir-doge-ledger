@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { settingsApi } from "../api";
+import { useCategories } from "../categories";
 import { translations, tr, type Lang } from "./translations";
 
 export { tr };
@@ -16,12 +17,13 @@ type I18nContextValue = {
   lang: Lang;
   setLang: (lang: Lang) => void;
   t: (typeof translations)[Lang];
-  cat: (key: string) => string;
+  cat: (slug: string) => string;
 };
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
-export function I18nProvider({ children }: { children: ReactNode }) {
+function I18nProviderInner({ children }: { children: ReactNode }) {
+  const { categories } = useCategories();
   const [lang, setLangState] = useState<Lang>(() => {
     const stored = localStorage.getItem("sir-doge-lang");
     return stored === "en" ? "en" : "sv";
@@ -49,14 +51,28 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const t = translations[lang];
+
+  const nameBySlug = useMemo(
+    () => new Map(categories.map((c) => [c.slug, c.name])),
+    [categories],
+  );
+
   const cat = useCallback(
-    (key: string) => t.categories[key as keyof typeof t.categories] ?? key,
-    [t],
+    (slug: string) => {
+      const translated = t.categories[slug as keyof typeof t.categories];
+      if (translated) return translated;
+      return nameBySlug.get(slug) ?? slug;
+    },
+    [t, nameBySlug],
   );
 
   const value = useMemo(() => ({ lang, setLang, t, cat }), [lang, setLang, t, cat]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  return <I18nProviderInner>{children}</I18nProviderInner>;
 }
 
 export function useI18n() {

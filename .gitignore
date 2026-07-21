@@ -5,6 +5,8 @@ __pycache__/
 .ruff_cache/
 node_modules/
 frontend/dist/
+dist/
+build/
 *.db
 .DS_Store
 .env

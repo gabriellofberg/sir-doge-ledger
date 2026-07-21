@@ -7,8 +7,13 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from ..config import MAX_TRANSACTION_LIMIT, SAMPLE_DATA_DIR
-from ..db import CATEGORIES
-from ..services import budgets as budget_svc, money, recommendations as reco_svc
+from ..services import (
+    budgets as budget_svc,
+    categories as cat_svc,
+    insights as insights_svc,
+    money,
+    recommendations as reco_svc,
+)
 from ..services.import_parse import ColumnMapping
 from ..services.import_sessions import save_upload
 
@@ -50,6 +55,15 @@ class BulkCategoryUpdate(BaseModel):
     transaction_ids: list[int]
     category: str
     remember: bool = False
+    match_text: str | None = None
+
+
+class ClassifyTransferIn(BaseModel):
+    transaction_ids: list[int]
+    kind: str  # internal | income | expense
+    category: str | None = None
+    remember: bool = False
+    match_text: str | None = None
 
 
 class BankProfileIn(BaseModel):
@@ -70,9 +84,67 @@ class SavingsGoalIn(BaseModel):
     current_amount: float = 0
 
 
+class CategoryCreate(BaseModel):
+    name: str
+
+
+class CategoryRename(BaseModel):
+    name: str
+
+
+class CategoryMerge(BaseModel):
+    target_slug: str
+
+
 @router.get("/categories")
 def get_categories() -> dict[str, Any]:
-    return {"categories": CATEGORIES}
+    return {"categories": cat_svc.list_categories()}
+
+
+@router.post("/categories")
+def create_category(body: CategoryCreate) -> dict[str, Any]:
+    try:
+        return cat_svc.create_category(body.name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.patch("/categories/{slug}")
+def rename_category(slug: str, body: CategoryRename) -> dict[str, Any]:
+    try:
+        return cat_svc.rename_category(slug, body.name)
+    except KeyError as exc:
+        raise HTTPException(404, "category not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.delete("/categories/{slug}")
+def delete_category(slug: str) -> dict[str, Any]:
+    try:
+        return cat_svc.delete_category(slug)
+    except KeyError as exc:
+        raise HTTPException(404, "category not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/categories/{slug}/delete-preview")
+def category_delete_preview(slug: str) -> dict[str, Any]:
+    try:
+        return cat_svc.delete_preview(slug)
+    except KeyError as exc:
+        raise HTTPException(404, "category not found") from exc
+
+
+@router.post("/categories/{slug}/merge")
+def merge_category(slug: str, body: CategoryMerge) -> dict[str, Any]:
+    try:
+        return cat_svc.merge_categories(slug, body.target_slug)
+    except KeyError as exc:
+        raise HTTPException(404, "category not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/stats")
@@ -97,10 +169,23 @@ def cashflow(months: int = 12) -> dict[str, Any]:
 
 
 @router.get("/breakdown")
-def breakdown(kind: str = "spent") -> dict[str, Any]:
+def breakdown(
+    kind: str = "spent",
+    month: str | None = None,
+    months: int | None = None,
+) -> dict[str, Any]:
     if kind not in {"spent", "income"}:
         raise HTTPException(400, "kind must be spent or income")
-    return {"kind": kind, "categories": money.breakdown(kind)}
+    if month is not None and (len(month) != 7 or month[4] != "-"):
+        raise HTTPException(400, "month must be YYYY-MM")
+    if months is not None:
+        months = max(1, min(months, 36))
+    return {
+        "kind": kind,
+        "month": month,
+        "months": months,
+        "categories": money.breakdown(kind, month=month, months=months),
+    }
 
 
 @router.post("/preview")
@@ -147,10 +232,13 @@ async def import_transactions(
 def transactions(
     needs_review: bool | None = None,
     income_review: bool | None = None,
+    transfer_review: bool | None = None,
+    transfers_only: bool | None = None,
     category: str | None = None,
     search: str | None = None,
     tag: str | None = None,
     month: str | None = None,
+    sort: str = "date_desc",
     limit: int = 500,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -159,10 +247,13 @@ def transactions(
     items = money.list_transactions(
         needs_review=needs_review,
         income_review=income_review,
+        transfer_review=transfer_review,
+        transfers_only=transfers_only,
         category=category,
         search=search,
         tag=tag,
         month=month,
+        sort=sort,
         limit=limit,
         offset=offset,
     )
@@ -195,7 +286,29 @@ def patch_transaction(tx_id: int, body: TransactionPatch) -> dict[str, Any]:
 
 @router.post("/transactions/bulk-category")
 def bulk_category(body: BulkCategoryUpdate) -> dict[str, Any]:
-    return {"updated": money.bulk_update_category(body.transaction_ids, body.category, body.remember)}
+    return {
+        "updated": money.bulk_update_category(
+            body.transaction_ids,
+            body.category,
+            body.remember,
+            match_text=body.match_text,
+        )
+    }
+
+
+@router.post("/transactions/classify-transfer")
+def classify_transfer(body: ClassifyTransferIn) -> dict[str, Any]:
+    try:
+        updated = money.classify_transfer(
+            body.transaction_ids,
+            body.kind,
+            category=body.category,
+            remember=body.remember,
+            match_text=body.match_text,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"updated": updated}
 
 
 @router.get("/imports")
@@ -243,6 +356,17 @@ def alerts() -> dict[str, Any]:
         "price": money.price_alerts(),
         "recommendations": reco_svc.recommendations(),
     }
+
+
+@router.get("/insights")
+def insights(months: int = 12) -> dict[str, Any]:
+    return {"insights": insights_svc.generate_insights(months)}
+
+
+@router.patch("/recurring/price-events/{event_id}/acknowledge")
+def acknowledge_price_event(event_id: int) -> dict[str, str]:
+    money.acknowledge_price_event(event_id)
+    return {"status": "ok"}
 
 
 @router.get("/budgets")
@@ -304,6 +428,13 @@ def remove_rule(rule_id: int) -> dict[str, str]:
 @router.patch("/rules/{rule_id}")
 def patch_rule(rule_id: int, body: dict[str, Any]) -> dict[str, Any]:
     try:
-        return money.update_rule(rule_id, category=body.get("category"), enabled=body.get("enabled"))
+        return money.update_rule(
+            rule_id,
+            category=body.get("category"),
+            enabled=body.get("enabled"),
+            match_text=body.get("match_text"),
+        )
     except KeyError:
         raise HTTPException(404, "Not found") from None
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
