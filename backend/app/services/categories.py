@@ -94,6 +94,8 @@ def seed_categories(conn) -> None:
 
 def list_categories() -> list[dict[str, Any]]:
     with get_db() as conn:
+        # Heal empty / partially wiped DBs (seed is a no-op when all exist).
+        seed_categories(conn)
         rows = conn.execute(
             """
             SELECT c.slug, c.name, c.is_system, c.sort_order,
