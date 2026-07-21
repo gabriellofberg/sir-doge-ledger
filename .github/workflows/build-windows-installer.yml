@@ -32,7 +32,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          $rollupVersion = node -p "require('./package-lock.json').packages['node_modules/rollup'].optionalDependencies['@rollup/rollup-win32-x64-msvc']"
+          $rollupVersion = node -e "const lock = require('./package-lock.json'); const version = lock.packages?.['node_modules/rollup']?.optionalDependencies?.['@rollup/rollup-win32-x64-msvc']; if (!version) { console.error('Could not determine @rollup/rollup-win32-x64-msvc version from frontend/package-lock.json'); process.exit(1); } process.stdout.write(version);"
           npm install --no-save "@rollup/rollup-win32-x64-msvc@$rollupVersion"
           npm run build
 
