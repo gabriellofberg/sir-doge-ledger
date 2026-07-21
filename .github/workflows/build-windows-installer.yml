@@ -61,7 +61,13 @@ jobs:
           process.stdout.write(version);
           '@
           $rollupVersion = node -e $rollupVersionScript
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($rollupVersion)) {
+            throw "Failed to resolve the lockfile-pinned version for @rollup/rollup-win32-x64-msvc"
+          }
           npm install --no-save "@rollup/rollup-win32-x64-msvc@$rollupVersion"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install @rollup/rollup-win32-x64-msvc@$rollupVersion"
+          }
           npm run build
 
       - name: Install Python deps and run tests
