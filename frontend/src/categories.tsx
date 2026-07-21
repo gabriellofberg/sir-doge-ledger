@@ -13,6 +13,7 @@ import {
   type CategoryInfo,
   type CategoryMergeResult,
 } from "./api";
+import { useAuth } from "./auth";
 
 type CategoriesContextValue = {
   categories: CategoryInfo[];
@@ -33,11 +34,28 @@ const CategoriesContext = createContext<CategoriesContextValue | null>(null);
 
 const BUDGET_EXCLUDE = new Set(["Income", "Transfers", "Unclear"]);
 
+/** Built-in slugs used if the API has not loaded yet (should be rare after auth). */
+export const FALLBACK_CATEGORY_SLUGS = [
+  "Housing",
+  "Groceries",
+  "Transport",
+  "Restaurants",
+  "Subscriptions",
+  "Shopping",
+  "Health",
+  "Income",
+  "Transfers",
+  "Fees",
+  "Other",
+  "Unclear",
+] as const;
+
 export function budgetCategorySlugs(categories: CategoryInfo[]): string[] {
   return categories.filter((c) => !BUDGET_EXCLUDE.has(c.slug)).map((c) => c.slug);
 }
 
 export function CategoriesProvider({ children }: { children: ReactNode }) {
+  const { status } = useAuth();
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,10 +66,24 @@ export function CategoriesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refresh().catch(() => setLoading(false));
-  }, [refresh]);
+    if (status !== "authenticated") {
+      // Avoid a pre-login 401 that left the list empty forever.
+      setCategories([]);
+      setLoading(status === "loading");
+      return;
+    }
+    setLoading(true);
+    refresh().catch(() => {
+      setCategories([]);
+      setLoading(false);
+    });
+  }, [status, refresh]);
 
-  const slugs = useMemo(() => categories.map((c) => c.slug), [categories]);
+  const slugs = useMemo(() => {
+    if (categories.length > 0) return categories.map((c) => c.slug);
+    // Keep dropdowns usable if refresh failed but we are authed.
+    return status === "authenticated" ? [...FALLBACK_CATEGORY_SLUGS] : [];
+  }, [categories, status]);
 
   const createCategory = useCallback(
     async (name: string) => {

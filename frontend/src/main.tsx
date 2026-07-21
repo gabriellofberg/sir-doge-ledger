@@ -10,13 +10,13 @@ import "./styles.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <CategoriesProvider>
-        <I18nProvider>
-          <AuthProvider>
+      <AuthProvider>
+        <CategoriesProvider>
+          <I18nProvider>
             <App />
-          </AuthProvider>
-        </I18nProvider>
-      </CategoriesProvider>
+          </I18nProvider>
+        </CategoriesProvider>
+      </AuthProvider>
     </BrowserRouter>
   </StrictMode>,
 );

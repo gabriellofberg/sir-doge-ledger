@@ -201,6 +201,18 @@ def test_merge_budget_when_target_has_none():
         assert budget["monthly_limit"] == 800
 
 
+def test_list_categories_reseeds_when_table_empty():
+    from app.db import CATEGORIES
+    from app.services.categories import list_categories
+
+    with get_db() as conn:
+        conn.execute("DELETE FROM categories")
+
+    rows = list_categories()
+    assert {r["slug"] for r in rows} == set(CATEGORIES)
+    assert all(r["is_system"] == 1 for r in rows)
+
+
 def test_cannot_delete_system_category():
     with pytest.raises(ValueError, match="system"):
         delete_category("Income")

@@ -1,12 +1,13 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { moneyApi, settingsApi, type CategoryDeletePreview } from "../api";
-import { budgetCategorySlugs, useCategories } from "../categories";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { moneyApi, settingsApi, type CategoryDeletePreview, type CategoryInfo } from "../api";
+import { budgetCategorySlugs, FALLBACK_CATEGORY_SLUGS, useCategories } from "../categories";
 import { useI18n, tr } from "../i18n";
 
 export default function SettingsPage() {
   const { t, cat } = useI18n();
   const {
     categories,
+    loading: categoriesLoading,
     createCategory,
     renameCategory,
     deleteCategory,
@@ -30,14 +31,26 @@ export default function SettingsPage() {
   const [mergeTarget, setMergeTarget] = useState("");
   const [mergeBusy, setMergeBusy] = useState(false);
 
+  const displayCategories = useMemo<CategoryInfo[]>(() => {
+    if (categories.length > 0) return categories;
+    if (categoriesLoading) return [];
+    return FALLBACK_CATEGORY_SLUGS.map((slug, i) => ({
+      slug,
+      name: cat(slug),
+      is_system: 1,
+      sort_order: i,
+      tx_count: 0,
+    }));
+  }, [categories, categoriesLoading, cat]);
+
   useEffect(() => {
     settingsApi.get().then(setSettings);
     moneyApi.budgets().then((b) => setBudgets(b.budgets));
   }, []);
 
   useEffect(() => {
-    setRenameDrafts(Object.fromEntries(categories.map((c) => [c.slug, c.name])));
-  }, [categories]);
+    setRenameDrafts(Object.fromEntries(displayCategories.map((c) => [c.slug, c.name])));
+  }, [displayCategories]);
 
   async function save(patch: Record<string, unknown>) {
     const next = await settingsApi.patch(patch);
@@ -66,7 +79,7 @@ export default function SettingsPage() {
 
   async function saveRename(slug: string) {
     const name = (renameDrafts[slug] ?? "").trim();
-    const current = categories.find((c) => c.slug === slug)?.name ?? "";
+    const current = displayCategories.find((c) => c.slug === slug)?.name ?? "";
     if (!name || name === current) return;
     setError(null);
     try {
@@ -135,7 +148,7 @@ export default function SettingsPage() {
     }
   }
 
-  const budgetSlugs = budgetCategorySlugs(categories);
+  const budgetSlugs = budgetCategorySlugs(displayCategories);
 
   return (
     <div className="stack">
@@ -228,7 +241,7 @@ export default function SettingsPage() {
               </tr>
             </thead>
             <tbody>
-              {categories.map((c) => (
+              {displayCategories.map((c) => (
                 <tr key={c.slug}>
                   <td>
                     <input
@@ -354,7 +367,7 @@ export default function SettingsPage() {
                 required
               >
                 <option value="">{t.settings.mergeTargetPlaceholder}</option>
-                {categories
+                {displayCategories
                   .filter((c) => c.slug !== mergeSource)
                   .map((c) => (
                     <option key={c.slug} value={c.slug}>
