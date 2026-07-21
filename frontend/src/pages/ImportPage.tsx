@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { moneyApi } from "../api";
+import { useI18n, tr } from "../i18n";
 
 type Preview = Awaited<ReturnType<typeof moneyApi.preview>>;
 
 export default function ImportPage() {
   const nav = useNavigate();
+  const { t } = useI18n();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mapping, setMapping] = useState({
     date: "",
@@ -19,6 +21,12 @@ export default function ImportPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const fieldLabel = {
+    date: t.import.date,
+    amount: t.import.amount,
+    description: t.import.description,
+  };
 
   async function onFile(file: File | null) {
     if (!file) return;
@@ -54,8 +62,16 @@ export default function ImportPage() {
         deleteUpload,
       );
       const skipped =
-        result.skipped_count > 0 ? ` (${result.skipped_count} duplicates skipped)` : "";
-      setMessage(`Imported ${result.row_count} rows${skipped}. ${result.unclear_count} need review.`);
+        result.skipped_count > 0
+          ? tr(t.import.skipped, { count: result.skipped_count })
+          : "";
+      setMessage(
+        tr(t.import.imported, {
+          count: result.row_count,
+          skipped,
+          unclear: result.unclear_count,
+        }),
+      );
       setTimeout(
         () => nav(result.unclear_count ? "/transactions?review=1" : "/"),
         900,
@@ -69,14 +85,11 @@ export default function ImportPage() {
 
   return (
     <div className="stack">
-      <h1>Import bank export</h1>
-      <p className="lede">
-        Export ~6 months from your bank as CSV or Excel. File is parsed locally — never uploaded to
-        the internet.
-      </p>
+      <h1>{t.import.title}</h1>
+      <p className="lede">{t.import.lede}</p>
 
       <label className="file-pick">
-        <span>Choose file</span>
+        <span>{t.import.chooseFile}</span>
         <input
           type="file"
           accept=".csv,.txt,.xlsx,.xlsm"
@@ -85,17 +98,37 @@ export default function ImportPage() {
         />
       </label>
 
+      <button
+        type="button"
+        className="secondary"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const r = await moneyApi.importSample();
+            setMessage(tr(t.import.sampleOk, { count: r.row_count }));
+            nav("/");
+          } catch (e) {
+            setError(String(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {t.import.loadSample}
+      </button>
+
       {error && <p className="error">{error}</p>}
       {message && <p className="ok">{message}</p>}
 
       {preview && (
         <>
           <section className="panel">
-            <h2>Column mapping</h2>
+            <h2>{t.import.mapping}</h2>
             <div className="form-grid">
               {(["date", "amount", "description"] as const).map((field) => (
                 <label key={field}>
-                  {field}
+                  {fieldLabel[field]}
                   <select
                     value={mapping[field]}
                     onChange={(e) => setMapping({ ...mapping, [field]: e.target.value })}
@@ -109,13 +142,13 @@ export default function ImportPage() {
                 </label>
               ))}
               <label>
-                Amount decimal
+                {t.import.amountDecimal}
                 <select
                   value={mapping.amount_decimal}
                   onChange={(e) => setMapping({ ...mapping, amount_decimal: e.target.value })}
                 >
-                  <option value=",">Comma (1.234,56)</option>
-                  <option value=".">Dot (1,234.56)</option>
+                  <option value=",">{t.import.comma}</option>
+                  <option value=".">{t.import.dot}</option>
                 </select>
               </label>
             </div>
@@ -126,17 +159,17 @@ export default function ImportPage() {
                 onChange={(e) => setDeleteUpload(e.target.checked)}
               />
               <span>
-                Delete bank file from disk after import
-                <small>Recommended — removes the raw export from local storage</small>
+                {t.import.deleteUpload}
+                <small>{t.import.deleteHint}</small>
               </span>
             </label>
             <button type="button" className="primary" disabled={busy} onClick={doImport}>
-              Import & categorize
+              {t.import.importBtn}
             </button>
           </section>
 
           <section>
-            <h2>Preview</h2>
+            <h2>{t.import.preview}</h2>
             <div className="table-wrap">
               <table>
                 <thead>

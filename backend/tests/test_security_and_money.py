@@ -15,7 +15,7 @@ def test_tx_hash_stable():
 
 
 def test_dedup_skips_second_import():
-    csv = Path("sample_data/sample_transactions.csv")
+    csv = Path(__file__).resolve().parents[2] / "sample_data" / "sample_transactions.csv"
     data = csv.read_bytes()
     sid1, _ = save_upload("sample.csv", data)
     mapping = ColumnMapping(
@@ -55,8 +55,9 @@ def test_cashflow_excludes_transfers():
             """
             INSERT INTO transactions (
                 import_id, tx_date, amount, raw_description, normalized_merchant,
-                category, category_source, confidence, needs_review, tx_hash, created_at
-            ) VALUES (?, '2026-06-02', 500, 'TRANSFER', 'TRANSFER', 'Transfers', 'auto', 0.9, 0, ?, ?)
+                category, category_source, confidence, needs_review, tx_hash,
+                transfer_kind, created_at
+            ) VALUES (?, '2026-06-02', 500, 'TRANSFER', 'TRANSFER', 'Transfers', 'auto', 0.9, 0, ?, 'internal', ?)
             """,
             (iid, tx_hash("2026-06-02", 500, "TRANSFER"), now_iso()),
         )
@@ -73,22 +74,24 @@ def test_resolve_upload_rejects_traversal(tmp_path):
         resolve_upload_path(str(evil))
 
 
-def test_auth_required():
+def test_auth_required(monkeypatch):
     from fastapi.testclient import TestClient
 
     from app.main import app
+    import app.services.auth as auth_mod
 
+    monkeypatch.setattr(auth_mod, "auth_enabled", lambda: True)
+    monkeypatch.setattr(auth_mod, "session_matches", lambda _t: False)
     c = TestClient(app)
     r = c.get("/api/money/stats")
     assert r.status_code == 401
 
 
-def test_auth_with_token():
+def test_auth_with_dev_open():
     from fastapi.testclient import TestClient
 
     from app.main import app
 
     c = TestClient(app)
-    c.cookies.set("sir_doge_token", "test-token-for-pytest-only")
     r = c.get("/api/money/stats")
     assert r.status_code == 200

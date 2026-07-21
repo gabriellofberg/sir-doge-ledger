@@ -9,7 +9,7 @@ def isolated_data_dir(tmp_path, monkeypatch):
     token = data / "api-token"
 
     monkeypatch.setenv("SIR_DOGE_DATA_DIR", str(data))
-    monkeypatch.setenv("SIR_DOGE_TOKEN", "test-token-for-pytest-only")
+    monkeypatch.setenv("SIR_DOGE_DEV", "1")
 
     import app.config as config
     import app.services.auth as auth
@@ -32,4 +32,8 @@ def isolated_data_dir(tmp_path, monkeypatch):
 
     ensure_dirs()
     init_db()
+    from app.services.categories import seed_categories
+
+    with dbmod.get_db() as conn:
+        seed_categories(conn)
     yield

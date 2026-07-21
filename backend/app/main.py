@@ -4,24 +4,38 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .config import APP_NAME, APP_VERSION, FRONTEND_DIST, ensure_dirs
-from .db import init_db
-from .routers import life, money
+from .db import get_db, init_db, set_demo_mode
+from .routers import data, life, money, settings
 from .services import auth
+from .services.categories import seed_categories
+from .services.demo import ensure_demo_db
 from .services.import_sessions import purge_old_sessions
+from .services.money import sanitize_category_rules
 
 CSRF_HEADER = "x-sir-doge"
 _PROTECTED_METHODS = {"POST", "DELETE", "PATCH", "PUT"}
-_AUTH_EXEMPT_PATHS = {"/api/health", "/api/auth"}
+_AUTH_EXEMPT = {
+    "/api/health",
+    "/api/auth/status",
+    "/api/auth/setup",
+    "/api/auth/login",
+    "/api/auth/demo",
+    "/api/auth/recover",
+}
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_dirs()
-    auth.ensure_token()
     init_db()
+    ensure_demo_db()
     purge_old_sessions()
+    with get_db() as conn:
+        seed_categories(conn)
+        sanitize_category_rules(conn)
     yield
 
 
@@ -43,14 +57,8 @@ app.add_middleware(
 )
 
 
-def _request_has_valid_token(request: Request) -> bool:
-    cookie = request.cookies.get(auth.COOKIE_NAME)
-    if auth.token_matches(cookie):
-        return True
-    header = request.headers.get("authorization", "")
-    if header.lower().startswith("bearer "):
-        return auth.token_matches(header[7:])
-    return auth.token_matches(request.headers.get("x-sir-doge-token"))
+def _session_from_request(request: Request) -> str | None:
+    return request.cookies.get(auth.COOKIE_NAME)
 
 
 @app.middleware("http")
@@ -66,15 +74,17 @@ async def security_middleware(request: Request, call_next):
 @app.middleware("http")
 async def api_gatekeeper(request: Request, call_next):
     path = request.url.path
+    session = _session_from_request(request)
+    set_demo_mode(auth.is_demo_session(session))
     if path.startswith("/api/"):
         if (
             auth.auth_enabled()
-            and path not in _AUTH_EXEMPT_PATHS
-            and not _request_has_valid_token(request)
+            and path not in _AUTH_EXEMPT
+            and not auth.session_matches(session)
         ):
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Invalid or missing token.", "code": "unauthorized"},
+                content={"detail": "Invalid or missing session.", "code": "unauthorized"},
             )
         if request.method in _PROTECTED_METHODS and not request.headers.get(CSRF_HEADER):
             return JSONResponse(
@@ -90,38 +100,97 @@ def health():
         "status": "ok",
         "app": "sir-doge-ledger",
         "version": APP_VERSION,
-        "auth_required": auth.auth_enabled(),
+        **auth.auth_status(),
     }
 
 
-@app.post("/api/auth")
-async def authenticate(request: Request):
-    candidate = request.query_params.get("token")
-    if not candidate:
-        try:
-            body = await request.json()
-            candidate = body.get("token") if isinstance(body, dict) else None
-        except (ValueError, TypeError):
-            candidate = None
-    if not auth.token_matches(candidate):
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Invalid token.", "code": "unauthorized"},
-        )
-    response = JSONResponse(content={"status": "ok"})
+class SetupBody(BaseModel):
+    password: str
+
+
+class LoginBody(BaseModel):
+    password: str
+
+
+class RecoverBody(BaseModel):
+    recovery_key: str
+    new_password: str
+
+
+def _set_session_cookie(response: JSONResponse, token: str) -> None:
     response.set_cookie(
         auth.COOKIE_NAME,
-        candidate.strip(),
+        token,
         httponly=True,
         samesite="strict",
-        max_age=60 * 60 * 24 * 30,
+        max_age=60 * 60 * 24 * auth.SESSION_DAYS,
         path="/",
     )
+
+
+@app.get("/api/auth/status")
+def auth_status():
+    return auth.auth_status()
+
+
+@app.post("/api/auth/setup")
+def auth_setup(body: SetupBody):
+    if not auth.needs_setup():
+        raise HTTPException(400, "Already set up")
+    try:
+        result = auth.setup_password(body.password)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    response = JSONResponse(
+        content={"status": "ok", "recovery_key": result["recovery_key"]}
+    )
+    _set_session_cookie(response, result["session"])
+    return response
+
+
+@app.post("/api/auth/login")
+def auth_login(body: LoginBody):
+    if auth.needs_setup():
+        raise HTTPException(400, "Password not set up yet")
+    if not auth.verify_password(body.password):
+        return JSONResponse(status_code=401, content={"detail": "Wrong password.", "code": "unauthorized"})
+    token = auth.create_login_session()
+    response = JSONResponse(content={"status": "ok"})
+    _set_session_cookie(response, token)
+    return response
+
+
+@app.post("/api/auth/demo")
+def auth_demo():
+    ensure_demo_db()
+    token = auth.create_demo_session()
+    response = JSONResponse(content={"status": "ok", "demo": True})
+    _set_session_cookie(response, token)
+    return response
+
+
+@app.post("/api/auth/recover")
+def auth_recover(body: RecoverBody):
+    if not auth.recover_password(body.recovery_key, body.new_password):
+        raise HTTPException(400, "Invalid recovery key")
+    token = auth.create_login_session()
+    response = JSONResponse(content={"status": "ok"})
+    _set_session_cookie(response, token)
+    return response
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request):
+    auth.invalidate_session(_session_from_request(request))
+    response = JSONResponse(content={"status": "ok"})
+    response.delete_cookie(auth.COOKIE_NAME, path="/")
     return response
 
 
 app.include_router(money.router)
 app.include_router(life.router)
+app.include_router(data.router)
+app.include_router(settings.router)
 
 
 if FRONTEND_DIST.is_dir():

@@ -9,6 +9,8 @@ from typing import Any
 
 from openpyxl import load_workbook
 
+from ..config import MAX_IMPORT_ROWS
+
 
 @dataclass
 class ParsedRow:
@@ -128,16 +130,22 @@ def parse_all_rows(path: Path, mapping: ColumnMapping) -> list[ParsedRow]:
     if suffix in {".xlsx", ".xlsm"}:
         wb = load_workbook(path, read_only=True, data_only=True)
         ws = wb.active
-        raw_rows = list(ws.iter_rows(values_only=True))
-        if not raw_rows:
-            return []
-        headers = [str(c).strip() if c is not None else f"col{i}" for i, c in enumerate(raw_rows[0])]
-        for row in raw_rows[1:]:
+        headers: list[str] = []
+        row_count = 0
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0:
+                headers = [
+                    str(c).strip() if c is not None else f"col{j}" for j, c in enumerate(row)
+                ]
+                continue
             d = {
-                headers[i]: "" if (i >= len(row) or row[i] is None) else str(row[i]).strip()
-                for i in range(len(headers))
+                headers[j]: "" if (j >= len(row) or row[j] is None) else str(row[j]).strip()
+                for j in range(len(headers))
             }
             if any(d.values()):
+                row_count += 1
+                if row_count > MAX_IMPORT_ROWS:
+                    raise ValueError(f"Too many rows (max {MAX_IMPORT_ROWS:,})")
                 rows_dicts.append(d)
     else:
         text = path.read_text(encoding="utf-8-sig", errors="replace")
@@ -148,6 +156,8 @@ def parse_all_rows(path: Path, mapping: ColumnMapping) -> list[ParsedRow]:
         for row in reader:
             d = {k: (v or "").strip() for k, v in row.items() if k is not None}
             if any(d.values()):
+                if len(rows_dicts) >= MAX_IMPORT_ROWS:
+                    raise ValueError(f"Too many rows (max {MAX_IMPORT_ROWS:,})")
                 rows_dicts.append(d)
 
     parsed: list[ParsedRow] = []

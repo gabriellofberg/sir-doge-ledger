@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SirDoge Ledger — local start script
-#   ./run.sh        Development: backend + Vite
-#   ./run.sh prod   Build frontend, single port
+#   ./run.sh        Development: backend + Vite (open auth)
+#   ./run.sh prod   Build frontend, single port (password auth)
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -32,8 +32,45 @@ fi
 
 export PYTHONPATH="${PWD}/backend${PYTHONPATH:+:$PYTHONPATH}"
 
-# Always-on local API token (stricter than HomeSec dev mode)
-TOKEN=$(python -c "from app.services.auth import ensure_token; print(ensure_token())")
+if [ "$MODE" = "prod" ]; then
+  unset SIR_DOGE_DEV
+  export SIR_DOGE_PROD=1
+  echo "Building frontend..."
+  (cd frontend && npm run build)
+  echo "Serving on http://127.0.0.1:${BACKEND_PORT}/"
+  echo "Set a password on first visit. Recovery key saved to ~/.local/share/sir-doge-ledger/recovery-hint.txt"
+  exec uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$BACKEND_PORT"
+fi
+
+export SIR_DOGE_DEV=1
+echo "Dev mode: no password required (SIR_DOGE_DEV=1)"
+echo "Backend  http://127.0.0.1:${BACKEND_PORT}/api/health"
+echo "Frontend http://127.0.0.1:${FRONTEND_PORT}/"
+
+open_browser() {
+  local url="$1"
+  python -c "
+import threading, time, webbrowser
+def open_url():
+    time.sleep(1)
+    webbrowser.open('$url')
+threading.Thread(target=open_url, daemon=True).start()
+" &
+}
+
+wait_for_backend() {
+  local url="http://127.0.0.1:${BACKEND_PORT}/api/health"
+  echo "Waiting for backend..."
+  for _ in $(seq 1 60); do
+    if curl -sf "$url" >/dev/null 2>&1; then
+      echo "Backend ready."
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "Backend did not start on ${BACKEND_PORT} — check errors above." >&2
+  return 1
+}
 
 cleanup() {
   if [ -n "${BACKEND_PID:-}" ]; then
@@ -43,18 +80,8 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if [ "$MODE" = "prod" ]; then
-  export SIR_DOGE_PROD=1
-  echo "Building frontend..."
-  (cd frontend && npm run build)
-  echo "Serving on http://127.0.0.1:${BACKEND_PORT}/?token=${TOKEN}"
-  exec uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$BACKEND_PORT"
-fi
-
-echo "Backend  http://127.0.0.1:${BACKEND_PORT}/api/health"
-echo "Frontend http://127.0.0.1:${FRONTEND_PORT}/?token=${TOKEN}"
-echo "Open the frontend URL above to authenticate this browser session."
-
 uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$BACKEND_PORT" --reload &
 BACKEND_PID=$!
+wait_for_backend
+open_browser "http://127.0.0.1:${FRONTEND_PORT}/"
 cd frontend && npm run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT"
