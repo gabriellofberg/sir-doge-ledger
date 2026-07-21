@@ -357,12 +357,15 @@ def list_transactions(
         clauses.append("t.needs_review = 0")
     if income_review is True:
         clauses.append("t.amount > 0")
-        clauses.append(f"t.category NOT IN ('{INCOME_CAT}', '{TRANSFER_CAT}')")
+        clauses.append("t.category NOT IN (?, ?)")
+        params.extend([INCOME_CAT, TRANSFER_CAT])
     if transfer_review is True:
-        clauses.append(f"t.category = '{TRANSFER_CAT}'")
+        clauses.append("t.category = ?")
+        params.append(TRANSFER_CAT)
         clauses.append("t.transfer_kind IS NULL")
     if transfers_only is True and transfer_review is not True:
-        clauses.append(f"t.category = '{TRANSFER_CAT}'")
+        clauses.append("t.category = ?")
+        params.append(TRANSFER_CAT)
     if category:
         clauses.append("t.category = ?")
         params.append(category)

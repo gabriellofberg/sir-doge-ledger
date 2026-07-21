@@ -29,6 +29,10 @@ ArchitecturesInstallIn64BitMode=x64compatible
 Name: "swedish"; MessagesFile: "compiler:Languages\Swedish.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+english.RemoveSavedDataPrompt=Do you also want to remove saved data (database, uploads, password)?
+swedish.RemoveSavedDataPrompt=Vill du också ta bort sparade data (databas, uppladdningar, lösenord)?
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
@@ -48,7 +52,7 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
-    if MsgBox('Vill du också ta bort sparade data (databas, uppladdningar, lösenord)?', mbConfirmation, MB_YESNO) = IDYES then
+    if MsgBox(ExpandConstant('{cm:RemoveSavedDataPrompt}'), mbConfirmation, MB_YESNO) = IDYES then
       DelTree(ExpandConstant('{localappdata}\sir-doge-ledger'), True, True, True);
   end;
 end;
