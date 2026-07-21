@@ -32,39 +32,28 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          $rollupVersionScript = @'
-          let lock;
           try {
-            lock = require('./package-lock.json');
-          } catch (error) {
-            const details = error?.stack || error?.message || String(error);
-            console.error(`Failed to load package-lock.json from the frontend directory: ${details}`);
-            process.exit(1);
+            $packageLock = Get-Content package-lock.json -Raw | ConvertFrom-Json -AsHashtable
           }
-          if (!lock.packages) {
-            console.error('package-lock.json is missing the top-level packages map');
-            process.exit(1);
+          catch {
+            throw "Failed to load package-lock.json from the frontend directory: $($_.Exception.Message)"
           }
-          const rollupPackage = lock.packages['node_modules/rollup'];
-          if (!rollupPackage) {
-            console.error('package-lock.json is missing the node_modules/rollup package entry');
-            process.exit(1);
+          if (-not $packageLock.ContainsKey('packages')) {
+            throw "package-lock.json is missing the top-level packages map"
           }
-          if (!rollupPackage.optionalDependencies) {
-            console.error('package-lock.json is missing optionalDependencies for node_modules/rollup');
-            process.exit(1);
+          $rollupPackages = $packageLock['packages']
+          if (-not $rollupPackages.ContainsKey('node_modules/rollup')) {
+            throw "package-lock.json is missing the node_modules/rollup package entry"
           }
-          const version = rollupPackage.optionalDependencies['@rollup/rollup-win32-x64-msvc'];
-          if (!version) {
-            console.error('package-lock.json is missing @rollup/rollup-win32-x64-msvc in node_modules/rollup optionalDependencies');
-            process.exit(1);
+          $rollupPackage = $rollupPackages['node_modules/rollup']
+          if (-not $rollupPackage.ContainsKey('optionalDependencies')) {
+            throw "package-lock.json is missing optionalDependencies for node_modules/rollup"
           }
-          console.log(version);
-          '@
-          $rollupVersion = (node -e $rollupVersionScript).Trim()
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to resolve the lockfile-pinned version for @rollup/rollup-win32-x64-msvc"
+          $rollupOptionalDependencies = $rollupPackage['optionalDependencies']
+          if (-not $rollupOptionalDependencies.ContainsKey('@rollup/rollup-win32-x64-msvc')) {
+            throw "package-lock.json is missing @rollup/rollup-win32-x64-msvc in node_modules/rollup optionalDependencies"
           }
+          $rollupVersion = $rollupOptionalDependencies['@rollup/rollup-win32-x64-msvc']
           npm install --no-save "@rollup/rollup-win32-x64-msvc@$rollupVersion"
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to install @rollup/rollup-win32-x64-msvc@$rollupVersion"
