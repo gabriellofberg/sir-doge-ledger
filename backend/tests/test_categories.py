@@ -1,5 +1,7 @@
 """Category CRUD, delete preview, merge, and manual_once protection."""
 
+import pytest
+
 from app.db import get_db, now_iso
 from app.services.categories import (
     create_category,
@@ -200,11 +202,8 @@ def test_merge_budget_when_target_has_none():
 
 
 def test_cannot_delete_system_category():
-    try:
+    with pytest.raises(ValueError, match="system"):
         delete_category("Income")
-        assert False, "expected ValueError"
-    except ValueError as exc:
-        assert "system" in str(exc).lower()
 
 
 def test_category_api_endpoints():

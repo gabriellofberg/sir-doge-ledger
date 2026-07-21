@@ -6,7 +6,7 @@ import re
 import unicodedata
 from typing import Any
 
-from ..db import CATEGORIES, get_db, now_iso, rows_to_dicts
+from ..db import CATEGORIES, get_db, rows_to_dicts
 from .categorize import categorize
 
 _UNCLEAR_THRESHOLD = 0.55
