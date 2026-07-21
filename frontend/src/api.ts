@@ -283,6 +283,14 @@ export const dataApi = {
       kind === "csv" ? "/api/data/export/transactions.csv" : "/api/data/export/backup.json",
       kind === "csv" ? "sir-doge-transactions.csv" : "sir-doge-backup.json",
     ),
+  restoreBackup: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api<{ status: string; restored: Record<string, number> }>("/api/data/import/backup", {
+      method: "POST",
+      body: fd,
+    });
+  },
   wipeAll: (confirm: string) =>
     api<{ status: string; removed: Record<string, number> }>("/api/data/wipe", {
       method: "POST",
