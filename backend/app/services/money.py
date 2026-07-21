@@ -9,11 +9,12 @@ from typing import Any
 
 from ..config import MAX_TRANSACTION_LIMIT, MAX_UPLOAD_BYTES
 from ..db import get_db, now_iso, rows_to_dicts
-from .categorize import categorize, ensure_category
+from .categorize import CategoryResult, categorize, ensure_category, _DEFAULT_FOODORA_THRESHOLD, _HIGH
 from .import_parse import ColumnMapping, guess_mapping, parse_all_rows, read_tabular
 from .import_sessions import delete_session, get_session_path
 from .normalize import clean_match_text, group_key, merchant_key, normalize_merchant, phrase_matches
 from .recurring import detect_recurring
+from .settings import get_setting
 
 TRANSFER_CAT = "Transfers"
 INCOME_CAT = "Income"
@@ -91,7 +92,6 @@ def sanitize_category_rules(conn) -> int:
             (cleaned, row["id"]),
         ).fetchone()
         if conflict:
-            # Prefer keeping the cleaned key; drop the dated duplicate
             conn.execute("DELETE FROM category_rules WHERE id = ?", (row["id"],))
         else:
             conn.execute(
@@ -100,7 +100,37 @@ def sanitize_category_rules(conn) -> int:
             )
         changed += 1
     reapply_all_learned_rules(conn)
+    _recategorize_foodora(conn)
     return changed
+
+
+def _recategorize_foodora(conn) -> int:
+    """Re-evaluate Foodora transactions against the amount-based grocery threshold."""
+    threshold = float(get_setting("foodora_grocery_threshold", _DEFAULT_FOODORA_THRESHOLD))
+    rows = conn.execute(
+        """
+        SELECT id, raw_description, amount, category, category_source
+        FROM transactions
+        WHERE category_source NOT IN ('manual_once', 'learned')
+          AND normalized_merchant LIKE '%FOODORA%'
+        """
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        amt = abs(float(row["amount"]))
+        if amt >= threshold and row["category"] != "Groceries":
+            conn.execute(
+                "UPDATE transactions SET category = 'Groceries', category_source = 'auto', confidence = 0.9, needs_review = 0 WHERE id = ?",
+                (row["id"],),
+            )
+            updated += 1
+        elif amt < threshold and row["category"] != "Restaurants":
+            conn.execute(
+                "UPDATE transactions SET category = 'Restaurants', category_source = 'auto', confidence = 0.9, needs_review = 0 WHERE id = ?",
+                (row["id"],),
+            )
+            updated += 1
+    return updated
 
 
 def preview_file(path: Path) -> dict[str, Any]:

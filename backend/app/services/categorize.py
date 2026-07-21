@@ -4,6 +4,9 @@ from dataclasses import dataclass
 
 from ..db import CATEGORIES
 from .normalize import phrase_matches
+from .settings import get_setting
+
+_DEFAULT_FOODORA_THRESHOLD = 350.0
 
 # (category, keywords) — first strong match wins among builtins; learned rules override.
 # Keywords are matched as whole token sequences (not raw substrings).
@@ -211,6 +214,8 @@ def categorize(
     description: str,
     amount: float,
     learned_rules: list[tuple[str, str]],
+    *,
+    foodora_threshold: float | None = None,
 ) -> CategoryResult:
     """Return category attempt. learned_rules: list of (match_text, category)."""
     for match_text, category in learned_rules:
@@ -243,6 +248,15 @@ def categorize(
 
     if best is None:
         return CategoryResult("Unclear", "unclear", _LOW, True)
+
+    # Foodora amount split: large orders are groceries, not restaurants
+    if best.category == "Restaurants" and phrase_matches("FOODORA", description):
+        threshold = float(
+            foodora_threshold if foodora_threshold is not None
+            else get_setting("foodora_grocery_threshold", _DEFAULT_FOODORA_THRESHOLD)
+        )
+        if abs(amount) >= threshold:
+            best = CategoryResult("Groceries", "auto", _HIGH, False)
 
     if best.confidence < _UNCLEAR_THRESHOLD:
         return CategoryResult(

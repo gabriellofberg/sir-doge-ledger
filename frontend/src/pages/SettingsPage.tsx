@@ -72,6 +72,21 @@ export default function SettingsPage() {
         </p>
       </section>
 
+      <section className="panel form-grid">
+        <h2 className="full">{t.settings.merchantRules}</h2>
+        <label>
+          {t.settings.foodoraThreshold}
+          <input
+            type="number"
+            min={0}
+            step={50}
+            value={Number(settings.foodora_grocery_threshold ?? 350)}
+            onChange={(e) => save({ foodora_grocery_threshold: Number(e.target.value) })}
+          />
+        </label>
+        <p className="muted full">{t.settings.foodoraHint}</p>
+      </section>
+
       <section className="panel">
         <h2>{t.settings.budgets}</h2>
         <p className="muted">{t.settings.budgetsHint}</p>

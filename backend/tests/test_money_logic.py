@@ -124,3 +124,32 @@ def test_recurring_accepts_three_monthly_same_day():
     assert len(groups) == 1
     assert groups[0].cadence == "monthly"
     assert groups[0].occurrence_count == 3
+
+
+def test_foodora_small_order_is_restaurants():
+    r = categorize("Kortköp 260710 Foodora", -189.0, [], foodora_threshold=350)
+    assert r.category == "Restaurants"
+    assert r.needs_review is False
+
+
+def test_foodora_large_order_is_groceries():
+    r = categorize("Kortköp 260710 Foodora", -520.0, [], foodora_threshold=350)
+    assert r.category == "Groceries"
+    assert r.needs_review is False
+
+
+def test_foodora_threshold_boundary():
+    r = categorize("Kortköp 260710 Foodora", -350.0, [], foodora_threshold=350)
+    assert r.category == "Groceries"
+
+
+def test_foodora_market_stays_groceries_regardless_of_amount():
+    r = categorize("Kortköp 260710 Foodora Market", -99.0, [], foodora_threshold=350)
+    assert r.category == "Groceries"
+
+
+def test_foodora_learned_rule_overrides_threshold():
+    rules = [("FOODORA", "Restaurants")]
+    r = categorize("Kortköp 260710 Foodora", -999.0, rules, foodora_threshold=350)
+    assert r.category == "Restaurants"
+    assert r.source == "learned"

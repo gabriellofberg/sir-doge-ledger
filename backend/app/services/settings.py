@@ -16,6 +16,7 @@ DEFAULTS: dict[str, Any] = {
     "monthly_income": 0,
     "encryption_enabled": False,
     "default_bank_profile": "",
+    "foodora_grocery_threshold": 350,
 }
 
 

@@ -224,6 +224,9 @@ const sv = {
     budgetsHint: "Valfritt per kategori — lämna tomt för att hoppa över.",
     savings: "Sparmål",
     perMonth: "kr/mån",
+    merchantRules: "Butiksregler",
+    foodoraThreshold: "Foodora mat-tröskel (kr)",
+    foodoraHint: "Foodora-köp ≥ detta belopp kategoriseras som Mat i stället för Restaurang.",
   },
   data: {
     title: "Dina data",
@@ -501,6 +504,9 @@ const en: DeepStringify<typeof sv> = {
     budgetsHint: "Optional per category — leave empty to skip.",
     savings: "Savings goals",
     perMonth: "kr/mo",
+    merchantRules: "Merchant rules",
+    foodoraThreshold: "Foodora grocery threshold (kr)",
+    foodoraHint: "Foodora orders ≥ this amount are categorized as Groceries instead of Restaurants.",
   },
   data: {
     title: "Your data",

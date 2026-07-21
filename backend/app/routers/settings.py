@@ -19,6 +19,7 @@ class SettingsPatch(BaseModel):
     delete_upload_after_import: bool | None = None
     default_date_format: str | None = None
     monthly_income: float | None = None
+    foodora_grocery_threshold: float | None = None
 
 
 @router.get("")
