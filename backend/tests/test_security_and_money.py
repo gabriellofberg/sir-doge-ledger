@@ -14,7 +14,7 @@ def test_tx_hash_stable():
 
 
 def test_dedup_skips_second_import():
-    csv = Path("sample_data/sample_transactions.csv")
+    csv = Path(__file__).resolve().parents[2] / "sample_data" / "sample_transactions.csv"
     data = csv.read_bytes()
     sid1, _ = save_upload("sample.csv", data)
     mapping = ColumnMapping(

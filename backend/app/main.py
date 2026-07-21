@@ -10,6 +10,7 @@ from .config import APP_NAME, APP_VERSION, FRONTEND_DIST, ensure_dirs
 from .db import get_db, init_db, set_demo_mode
 from .routers import data, life, money, settings
 from .services import auth
+from .services.categories import seed_categories
 from .services.demo import ensure_demo_db
 from .services.import_sessions import purge_old_sessions
 from .services.money import sanitize_category_rules
@@ -33,6 +34,7 @@ async def lifespan(_app: FastAPI):
     ensure_demo_db()
     purge_old_sessions()
     with get_db() as conn:
+        seed_categories(conn)
         sanitize_category_rules(conn)
     yield
 

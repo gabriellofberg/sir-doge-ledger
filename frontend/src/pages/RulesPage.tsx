@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { moneyApi } from "../api";
+import { useCategories } from "../categories";
 import { useI18n } from "../i18n";
-import { CATEGORIES } from "../categories";
 
 type Rule = { id: number; match_text: string; category: string; enabled: number };
 
 export default function RulesPage() {
   const { t, cat } = useI18n();
+  const { slugs } = useCategories();
   const [rules, setRules] = useState<Rule[]>([]);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export default function RulesPage() {
                       moneyApi.updateRule(r.id, { category: e.target.value }).then(load)
                     }
                   >
-                    {CATEGORIES.map((c) => (
+                    {slugs.map((c) => (
                       <option key={c} value={c}>
                         {cat(c)}
                       </option>
@@ -90,9 +91,15 @@ export default function RulesPage() {
                 </td>
               </tr>
             ))}
+            {rules.length === 0 && (
+              <tr>
+                <td colSpan={3} className="table-empty">
+                  {t.rules.empty}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
-        {rules.length === 0 && <p className="muted table-empty">{t.rules.empty}</p>}
       </div>
     </div>
   );

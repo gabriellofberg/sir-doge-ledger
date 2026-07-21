@@ -76,6 +76,12 @@ def _seed_full_dataset() -> None:
             """,
             (now_iso(),),
         )
+        conn.execute(
+            """
+            INSERT INTO categories (slug, name, is_system, sort_order)
+            VALUES ('CustomCat', 'Custom', 0, 99)
+            """,
+        )
 
 
 def test_backup_round_trip_restores_everything():
@@ -87,6 +93,7 @@ def test_backup_round_trip_restores_everything():
     assert len(backup["category_rules"]) == 1
     assert len(backup["app_settings"]) == 1
     assert len(backup["transaction_tags"]) == 1
+    assert len(backup["categories"]) >= 1
 
     wipe_all_data()
     with get_db() as conn:
@@ -117,6 +124,8 @@ def test_backup_round_trip_restores_everything():
             "SELECT monthly_limit FROM budgets WHERE category = 'Shopping'"
         ).fetchone()
         assert budget["monthly_limit"] == 2000
+        custom = conn.execute("SELECT slug FROM categories WHERE slug = 'CustomCat'").fetchone()
+        assert custom is not None
 
 
 def test_legacy_backup_without_new_tables_imports():

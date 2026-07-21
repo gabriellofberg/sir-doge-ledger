@@ -135,11 +135,67 @@ export type CashflowMonth = {
   unclear_count: number;
 };
 
+export type CategoryInfo = {
+  slug: string;
+  name: string;
+  is_system: number;
+  sort_order?: number;
+  tx_count?: number;
+};
+
+export type CategoryDeletePreview = {
+  slug: string;
+  tx_count: number;
+  estimated_recategorizable: number;
+  estimated_unclear: number;
+  rules_count: number;
+  budgets_count: number;
+  is_system: boolean;
+};
+
+export type CategoryMergeResult = {
+  status: string;
+  merged_slug: string;
+  target_slug: string;
+  transactions_moved: number;
+  rules_moved: number;
+  budget_moved: number;
+};
+
 export const moneyApi = {
   health: () => api<{ status: string; auth_required: boolean }>("/api/health"),
   stats: () => api<MoneyStats>("/api/money/stats"),
   completeness: () => api<MoneyStats>("/api/money/completeness"),
-  categories: () => api<{ categories: string[] }>("/api/money/categories"),
+  categories: () => api<{ categories: CategoryInfo[] }>("/api/money/categories"),
+  createCategory: (name: string) =>
+    api<CategoryInfo>("/api/money/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  renameCategory: (slug: string, name: string) =>
+    api<CategoryInfo>(`/api/money/categories/${encodeURIComponent(slug)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  deleteCategory: (slug: string) =>
+    api<{
+      status: string;
+      removed_slug: string;
+      transactions_recategorized: number;
+      transactions_unclear: number;
+    }>(`/api/money/categories/${encodeURIComponent(slug)}`, { method: "DELETE" }),
+  deleteCategoryPreview: (slug: string) =>
+    api<CategoryDeletePreview>(
+      `/api/money/categories/${encodeURIComponent(slug)}/delete-preview`,
+    ),
+  mergeCategory: (slug: string, targetSlug: string) =>
+    api<CategoryMergeResult>(`/api/money/categories/${encodeURIComponent(slug)}/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_slug: targetSlug }),
+    }),
   summary: () => api<{ by_category: Array<Record<string, number | string>> }>("/api/money/summary"),
   cashflow: (months = 12) => api<{ months: CashflowMonth[] }>(`/api/money/cashflow?months=${months}`),
   breakdown: (kind: "spent" | "income", opts?: { month?: string; months?: number }) => {

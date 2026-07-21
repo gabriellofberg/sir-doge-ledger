@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..db import CATEGORIES
 from .normalize import phrase_matches
 from .settings import get_setting
 
@@ -271,6 +270,6 @@ def categorize(
 
 
 def ensure_category(name: str) -> str:
-    if name in CATEGORIES:
-        return name
-    return "Other"
+    from .categories import ensure_category_slug
+
+    return ensure_category_slug(name)

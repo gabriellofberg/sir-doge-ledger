@@ -14,6 +14,7 @@ BACKUP_VERSION = 1
 
 # Every user-data table that a full wipe must clear (auth lives outside SQLite).
 _WIPE_TABLES = (
+    "categories",
     "transaction_tags",
     "transactions",
     "imports",
@@ -29,6 +30,7 @@ _WIPE_TABLES = (
 )
 
 _TABLE_COLUMNS: dict[str, list[str]] = {
+    "categories": ["slug", "name", "is_system", "sort_order"],
     "imports": ["id", "filename", "imported_at", "row_count", "mapping_json"],
     "bank_profiles": ["id", "name", "mapping_json", "created_at"],
     "category_rules": ["id", "match_text", "category", "enabled", "created_at"],
@@ -78,6 +80,7 @@ _TABLE_COLUMNS: dict[str, list[str]] = {
 }
 
 _RESTORE_ORDER: tuple[str, ...] = (
+    "categories",
     "imports",
     "bank_profiles",
     "category_rules",
@@ -210,9 +213,17 @@ def import_backup_json(payload: dict[str, Any]) -> dict[str, Any]:
     restored: dict[str, int] = {}
     with get_db() as conn:
         _wipe_db_tables(conn)
+        conn.execute("DELETE FROM categories")
         for table in _RESTORE_ORDER:
             restored[table] = _insert_rows(conn, table, data.get(table, []))
         _fix_sqlite_sequences(conn)
+        if not data.get("categories"):
+            from .categories import seed_categories
+
+            seed_categories(conn)
+    from .categories import _invalidate_cache
+
+    _invalidate_cache()
     return {"status": "ok", "restored": restored}
 
 
@@ -222,7 +233,15 @@ def wipe_all_data() -> dict[str, int]:
         counts: dict[str, int] = {}
         for table in _WIPE_TABLES:
             counts[table] = conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"]
+        counts["categories"] = conn.execute("SELECT COUNT(*) AS c FROM categories").fetchone()["c"]
         _wipe_db_tables(conn)
+        conn.execute("DELETE FROM categories")
+
+    from .categories import _invalidate_cache, seed_categories
+
+    with get_db() as conn:
+        seed_categories(conn)
+    _invalidate_cache()
 
     removed_uploads = 0
     if UPLOADS_DIR.is_dir():

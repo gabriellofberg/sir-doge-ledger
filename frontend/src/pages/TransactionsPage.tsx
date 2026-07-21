@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import EmptyState from "../components/EmptyState";
 import { formatKr, moneyApi, type Transaction } from "../api";
 import CategoryEditModal from "../components/CategoryEditModal";
-import { CATEGORIES } from "../categories";
+import { useCategories } from "../categories";
 import { useI18n, tr } from "../i18n";
 
 type GroupEdit = { key: string; txs: Transaction[] };
@@ -25,6 +25,7 @@ function isSortOption(v: string | null): v is SortOption {
 
 export default function TransactionsPage() {
   const { t, cat } = useI18n();
+  const { slugs: categorySlugs } = useCategories();
   const [params, setParams] = useSearchParams();
   const reviewOnly = params.get("review") === "1";
   const incomeOnly = params.get("income") === "1";
@@ -34,7 +35,6 @@ export default function TransactionsPage() {
   const sortFilter: SortOption = isSortOption(sortParam) ? sortParam : "date_desc";
   const searchParam = params.get("search") || "";
   const [rows, setRows] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
   const [monthOptions, setMonthOptions] = useState<string[]>([]);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [groupEdit, setGroupEdit] = useState<GroupEdit | null>(null);
@@ -62,11 +62,9 @@ export default function TransactionsPage() {
         sort: sortFilter,
         search: searchParam.trim() || undefined,
       }),
-      moneyApi.categories(),
     ])
-      .then(([tx, c]) => {
+      .then(([tx]) => {
         setRows(tx.transactions);
-        setCategories(c.categories);
       })
       .finally(() => setLoading(false));
   };
@@ -243,7 +241,7 @@ export default function TransactionsPage() {
               onChange={(e) => patchParams({ category: e.target.value || null })}
             >
               <option value="">{t.transactions.filterAll}</option>
-              {CATEGORIES.map((c) => (
+              {categorySlugs.map((c) => (
                 <option key={c} value={c}>
                   {cat(c)}
                 </option>
@@ -366,7 +364,7 @@ export default function TransactionsPage() {
       {editing && (
         <CategoryEditModal
           tx={editing}
-          categories={categories}
+          categories={categorySlugs}
           onClose={() => setEditing(null)}
           onSave={save}
         />
@@ -375,7 +373,7 @@ export default function TransactionsPage() {
         <CategoryEditModal
           txs={groupEdit.txs}
           matchText={groupEdit.key}
-          categories={categories}
+          categories={categorySlugs}
           onClose={() => setGroupEdit(null)}
           onSave={save}
         />

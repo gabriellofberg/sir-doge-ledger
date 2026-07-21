@@ -134,6 +134,13 @@ CREATE TABLE IF NOT EXISTS savings_goals (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS categories (
+    slug TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    is_system INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(tx_date);
 CREATE INDEX IF NOT EXISTS idx_tx_category ON transactions(category);
 CREATE INDEX IF NOT EXISTS idx_tx_review ON transactions(needs_review);

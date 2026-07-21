@@ -20,6 +20,17 @@ def ensure_demo_db() -> None:
         return
     ensure_dirs()
     init_db_file(str(path))
+    import sqlite3
+
+    from .categories import seed_categories
+
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        seed_categories(conn)
+        conn.commit()
+    finally:
+        conn.close()
     _seed_demo(path)
 
 

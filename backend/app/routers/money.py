@@ -7,8 +7,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from ..config import MAX_TRANSACTION_LIMIT, SAMPLE_DATA_DIR
-from ..db import CATEGORIES
-from ..services import budgets as budget_svc, money, recommendations as reco_svc
+from ..services import budgets as budget_svc, categories as cat_svc, money, recommendations as reco_svc
 from ..services.import_parse import ColumnMapping
 from ..services.import_sessions import save_upload
 
@@ -71,9 +70,67 @@ class SavingsGoalIn(BaseModel):
     current_amount: float = 0
 
 
+class CategoryCreate(BaseModel):
+    name: str
+
+
+class CategoryRename(BaseModel):
+    name: str
+
+
+class CategoryMerge(BaseModel):
+    target_slug: str
+
+
 @router.get("/categories")
 def get_categories() -> dict[str, Any]:
-    return {"categories": CATEGORIES}
+    return {"categories": cat_svc.list_categories()}
+
+
+@router.post("/categories")
+def create_category(body: CategoryCreate) -> dict[str, Any]:
+    try:
+        return cat_svc.create_category(body.name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.patch("/categories/{slug}")
+def rename_category(slug: str, body: CategoryRename) -> dict[str, Any]:
+    try:
+        return cat_svc.rename_category(slug, body.name)
+    except KeyError as exc:
+        raise HTTPException(404, "category not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.delete("/categories/{slug}")
+def delete_category(slug: str) -> dict[str, Any]:
+    try:
+        return cat_svc.delete_category(slug)
+    except KeyError as exc:
+        raise HTTPException(404, "category not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/categories/{slug}/delete-preview")
+def category_delete_preview(slug: str) -> dict[str, Any]:
+    try:
+        return cat_svc.delete_preview(slug)
+    except KeyError as exc:
+        raise HTTPException(404, "category not found") from exc
+
+
+@router.post("/categories/{slug}/merge")
+def merge_category(slug: str, body: CategoryMerge) -> dict[str, Any]:
+    try:
+        return cat_svc.merge_categories(slug, body.target_slug)
+    except KeyError as exc:
+        raise HTTPException(404, "category not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/stats")
