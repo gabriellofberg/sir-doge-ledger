@@ -1,5 +1,5 @@
 bcrypt==4.3.0
-fastapi==0.139.0
+fastapi==0.139.2
 starlette>=1.0.1
 uvicorn[standard]==0.51.0
 python-multipart==0.0.32
