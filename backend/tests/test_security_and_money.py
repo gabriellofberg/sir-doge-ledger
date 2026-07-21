@@ -1,10 +1,11 @@
-import pytest
 from pathlib import Path
 
+import pytest
+
 from app.services.import_parse import ColumnMapping
+from app.services.import_sessions import save_upload
 from app.services.money import cashflow, commit_import_session, tx_hash
 from app.services.security_paths import resolve_upload_path
-from app.services.import_sessions import save_upload
 
 
 def test_tx_hash_stable():
@@ -74,8 +75,9 @@ def test_resolve_upload_rejects_traversal(tmp_path):
 
 def test_auth_required(monkeypatch):
     from fastapi.testclient import TestClient
-    from app.main import app
+
     import app.services.auth as auth_mod
+    from app.main import app
 
     monkeypatch.setattr(auth_mod, "auth_enabled", lambda: True)
     monkeypatch.setattr(auth_mod, "session_matches", lambda _t: False)
@@ -86,6 +88,7 @@ def test_auth_required(monkeypatch):
 
 def test_auth_with_dev_open():
     from fastapi.testclient import TestClient
+
     from app.main import app
 
     c = TestClient(app)

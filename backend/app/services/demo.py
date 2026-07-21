@@ -8,10 +8,10 @@ from pathlib import Path
 
 from ..config import SAMPLE_DATA_DIR, demo_db_path, ensure_dirs
 from ..db import init_db_file, now_iso
+from .categorize import categorize
 from .import_parse import ColumnMapping, parse_all_rows
 from .import_sessions import save_upload
 from .normalize import normalize_merchant
-from .categorize import categorize
 
 
 def ensure_demo_db() -> None:

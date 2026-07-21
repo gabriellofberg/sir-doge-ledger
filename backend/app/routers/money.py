@@ -8,9 +8,7 @@ from pydantic import BaseModel
 
 from ..config import MAX_TRANSACTION_LIMIT, SAMPLE_DATA_DIR
 from ..db import CATEGORIES
-from ..services import money
-from ..services import budgets as budget_svc
-from ..services import recommendations as reco_svc
+from ..services import budgets as budget_svc, money, recommendations as reco_svc
 from ..services.import_parse import ColumnMapping
 from ..services.import_sessions import save_upload
 

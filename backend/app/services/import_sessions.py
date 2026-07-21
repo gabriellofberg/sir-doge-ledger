@@ -5,10 +5,9 @@ from __future__ import annotations
 import secrets
 import uuid
 from pathlib import Path
-from typing import Any
 
-from ..config import UPLOADS_DIR, ensure_dirs, secure_db_file
-from ..db import get_db, now_iso, rows_to_dicts
+from ..config import UPLOADS_DIR, ensure_dirs
+from ..db import get_db, now_iso
 from .security_paths import safe_unlink_upload, safe_upload_name
 
 
