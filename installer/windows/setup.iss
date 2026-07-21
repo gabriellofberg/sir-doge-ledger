@@ -2,7 +2,7 @@
 ; Build after: pyinstaller sir-doge.spec && npm run build (in frontend)
 
 #define MyAppName "SirDoge Ledger"
-#define MyAppVersion "0.4.0"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "SirDoge"
 #define MyAppURL "https://github.com/gabriellofberg/sir-doge-ledger"
 #define MyBuildDir "dist\SirDogeLedger"

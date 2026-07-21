@@ -8,7 +8,7 @@
 
 Import bank exports, categorize purchases, review subscriptions as yearly cost, set budgets, and track rent/docs/warranties — all on your machine.
 
-Version: **0.4** · Repo: [`sir-doge-ledger`](https://github.com/gabriellofberg/sir-doge-ledger)
+Version: **1.0** · Repo: [`sir-doge-ledger`](https://github.com/gabriellofberg/sir-doge-ledger)
 
 ## Features
 

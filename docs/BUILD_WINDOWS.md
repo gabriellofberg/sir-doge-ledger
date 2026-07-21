@@ -12,7 +12,7 @@ Från Linux kan du inte skapa en `.exe` lokalt — använd GitHub Actions eller 
 5. Dubbelklicka → Next → Next → Finish.
 6. Starta **SirDoge Ledger** från Startmenyn — webbläsaren öppnas automatiskt.
 
-Workflowen körs också automatiskt när du pushar en tagg som `v0.4.0`.
+Workflowen körs också automatiskt när du pushar en tagg som `v1.0.0`.
 
 ## Alternativ 2 — Bygg på din Windows-dator
 
