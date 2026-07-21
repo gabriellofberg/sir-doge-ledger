@@ -37,7 +37,7 @@ jobs:
           try {
             lock = require('./package-lock.json');
           } catch (error) {
-            const details = (error && error.stack) || (error && error.message) || String(error);
+            const details = error?.stack || error?.message || String(error);
             console.error(`Failed to load package-lock.json from the frontend directory: ${details}`);
             process.exit(1);
           }
@@ -59,9 +59,9 @@ jobs:
             console.error('package-lock.json is missing @rollup/rollup-win32-x64-msvc in node_modules/rollup optionalDependencies');
             process.exit(1);
           }
-          process.stdout.write(version);
+          console.log(version);
           '@
-          $rollupVersion = node -e $rollupVersionScript
+          $rollupVersion = (node -e $rollupVersionScript).Trim()
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to resolve the lockfile-pinned version for @rollup/rollup-win32-x64-msvc"
           }
