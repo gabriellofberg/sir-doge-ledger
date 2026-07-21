@@ -33,6 +33,7 @@ Version: **1.0** · Repo: [`sir-doge-ledger`](https://github.com/gabriellofberg/
 
 - Binds to **127.0.0.1** only
 - Session cookie (HttpOnly, SameSite=strict) after login
+- Prod login sessions are in-memory and reset when the app restarts (you log in again)
 - Mutating requests require `X-Sir-Doge` header (CSRF)
 - Bank uploads mode `0600`; deleted after import by default
 - Data directory (Linux/macOS): `~/.local/share/sir-doge-ledger/` (mode `0700`)
