@@ -183,12 +183,47 @@ def _recategorize_swish_transfers(conn) -> int:
 
 
 def preview_file(path: Path) -> dict[str, Any]:
+    from .import_parse import (
+        _cell_to_display,
+        _coerce_amount,
+        _coerce_date,
+        guess_amount_decimal,
+    )
+
     headers, preview, delimiter = read_tabular(path)
+    guessed = guess_mapping(headers)
+    amount_key = guessed.get("amount")
+    date_key = guessed.get("date")
+    desc_key = guessed.get("description")
+    amount_samples = [
+        str(row.get(amount_key, ""))
+        for row in preview
+        if amount_key and row.get(amount_key) not in (None, "")
+    ]
+    guessed_decimal = guess_amount_decimal(amount_samples, default=",")
+
+    parsed_preview: list[dict[str, Any]] = []
+    if date_key and amount_key and desc_key:
+        for row in preview[:8]:
+            try:
+                parsed_preview.append(
+                    {
+                        "tx_date": _coerce_date(row.get(date_key, ""), "auto"),
+                        "amount": _coerce_amount(row.get(amount_key, ""), guessed_decimal),
+                        "description": _cell_to_display(row.get(desc_key, "")).strip()
+                        or "(no description)",
+                    }
+                )
+            except (ValueError, TypeError, KeyError):
+                continue
+
     return {
         "headers": headers,
         "preview_rows": preview,
         "delimiter": delimiter,
-        "guessed_mapping": guess_mapping(headers),
+        "guessed_mapping": guessed,
+        "guessed_amount_decimal": guessed_decimal,
+        "parsed_preview": parsed_preview,
     }
 
 

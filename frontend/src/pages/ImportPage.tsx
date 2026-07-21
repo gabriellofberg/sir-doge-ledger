@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { moneyApi } from "../api";
+import { formatKr, moneyApi } from "../api";
 import { useI18n, tr } from "../i18n";
 
 type Preview = Awaited<ReturnType<typeof moneyApi.preview>>;
@@ -41,6 +41,7 @@ export default function ImportPage() {
         date: p.guessed_mapping.date || p.headers[0] || "",
         amount: p.guessed_mapping.amount || p.headers[1] || "",
         description: p.guessed_mapping.description || p.headers[2] || "",
+        amount_decimal: p.guessed_amount_decimal || m.amount_decimal || ",",
         delimiter: p.delimiter === "xlsx" ? undefined : p.delimiter,
       }));
     } catch (e) {
@@ -82,6 +83,8 @@ export default function ImportPage() {
       setBusy(false);
     }
   }
+
+  const parsedPreview = preview?.parsed_preview ?? [];
 
   return (
     <div className="stack">
@@ -167,6 +170,33 @@ export default function ImportPage() {
               {t.import.importBtn}
             </button>
           </section>
+
+          {parsedPreview.length > 0 && (
+            <section className="panel">
+              <h2>{t.import.parsedPreview}</h2>
+              <p className="muted">{t.import.parsedPreviewHint}</p>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{t.import.date}</th>
+                      <th>{t.import.description}</th>
+                      <th>{t.import.amount}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedPreview.map((row, i) => (
+                      <tr key={i}>
+                        <td>{row.tx_date}</td>
+                        <td>{row.description}</td>
+                        <td className={row.amount < 0 ? "neg" : "pos"}>{formatKr(row.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
           <section>
             <h2>{t.import.preview}</h2>

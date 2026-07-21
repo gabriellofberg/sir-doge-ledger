@@ -122,6 +122,9 @@ const sv = {
     deleteHint: "Rekommenderas — tar bort råexporten från lokal lagring",
     importBtn: "Importera & kategorisera",
     preview: "Förhandsvisning",
+    parsedPreview: "Tolkade belopp (kontrollera innan import)",
+    parsedPreviewHint:
+      "Om beloppen ser 100× för stora ut — byt decimaltecken ovan och importera om.",
     imported: "Importerade {count} rader{skipped}. {unclear} behöver granskas.",
     skipped: " ({count} dubbletter hoppades över)",
   },
@@ -495,6 +498,9 @@ const en: DeepStringify<typeof sv> = {
     deleteHint: "Recommended — removes the raw export from local storage",
     importBtn: "Import & categorize",
     preview: "Preview",
+    parsedPreview: "Parsed amounts (check before import)",
+    parsedPreviewHint:
+      "If amounts look ~100× too large, switch the decimal setting above and re-import.",
     imported: "Imported {count} rows{skipped}. {unclear} need review.",
     skipped: " ({count} duplicates skipped)",
   },
