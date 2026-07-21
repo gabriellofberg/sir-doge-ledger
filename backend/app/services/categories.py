@@ -11,7 +11,8 @@ from .categorize import categorize
 
 _UNCLEAR_THRESHOLD = 0.55
 
-SYSTEM_SLUGS = frozenset({"Income", "Transfers", "Unclear", "Other"})
+# All built-in categories are protected: rename/create custom OK, delete/merge-away not.
+SYSTEM_SLUGS = frozenset(CATEGORIES)
 
 # Swedish default display names used when seeding the categories table.
 DEFAULT_NAMES_SV: dict[str, str] = {
@@ -60,20 +61,34 @@ def ensure_category_slug(name: str) -> str:
 
 
 def seed_categories(conn) -> None:
-    """Create default categories on first run."""
-    count = conn.execute("SELECT COUNT(*) AS c FROM categories").fetchone()["c"]
-    if count > 0:
-        return
+    """Ensure the standard category set exists (restore if deleted).
+
+    Custom categories and renames are preserved. Missing builtins are
+    re-inserted with Swedish default names; existing builtins are marked
+    system so they cannot be deleted again.
+    """
     for i, slug in enumerate(CATEGORIES):
-        is_system = 1 if slug in SYSTEM_SLUGS else 0
         name = DEFAULT_NAMES_SV.get(slug, slug)
-        conn.execute(
-            """
-            INSERT INTO categories (slug, name, is_system, sort_order)
-            VALUES (?, ?, ?, ?)
-            """,
-            (slug, name, is_system, i),
-        )
+        existing = conn.execute(
+            "SELECT slug, name FROM categories WHERE slug = ?", (slug,)
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO categories (slug, name, is_system, sort_order)
+                VALUES (?, ?, 1, ?)
+                """,
+                (slug, name, i),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE categories
+                SET is_system = 1, sort_order = ?
+                WHERE slug = ?
+                """,
+                (i, slug),
+            )
     _invalidate_cache()
 
 
