@@ -202,7 +202,7 @@ def test_merge_budget_when_target_has_none():
 def test_cannot_delete_system_category():
     try:
         delete_category("Income")
-        assert False, "expected ValueError"
+        raise AssertionError("expected ValueError")
     except ValueError as exc:
         assert "system" in str(exc).lower()
 
