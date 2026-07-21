@@ -1412,6 +1412,27 @@ html[data-theme="dark"] .alert.good {
   color: var(--ok-ink);
 }
 
+html[data-theme="dark"] .alert.warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .alert.info {
+  background: var(--bg-panel);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .insight-title,
+html[data-theme="dark"] .insight-body {
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .price-hike-item {
+  border-bottom-color: var(--line);
+}
+
 html[data-theme="dark"] .demo-banner {
   background: #0c1018;
   border: 1px solid var(--gold);
@@ -1539,12 +1560,14 @@ button.linkish {
   display: block;
   font-size: 0.85rem;
   margin-bottom: 0.2rem;
+  color: var(--ink);
 }
 
 .insight-body {
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.45;
+  color: var(--ink);
 }
 
 .insight-link {
@@ -1554,8 +1577,9 @@ button.linkish {
 }
 
 .alert.info {
-  background: var(--panel-bg, #f8f6f1);
-  border: 1px solid var(--border, #e8dcc8);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
 }
 
 .price-hikes-panel {
@@ -1574,7 +1598,7 @@ button.linkish {
   gap: 0.75rem;
   justify-content: space-between;
   padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border, #e8dcc8);
+  border-bottom: 1px solid var(--line);
 }
 
 .price-hike-item:last-child {
@@ -1604,6 +1628,7 @@ button.linkish {
 .alert.warn {
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
+  color: var(--ink);
 }
 
 .alert.good {
