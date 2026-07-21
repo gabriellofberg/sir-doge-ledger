@@ -41,6 +41,28 @@ def test_categorize_spotify():
     assert r.needs_review is False
 
 
+def test_categorize_google_subscriptions():
+    assert categorize("Kortköp 260626 Google One", -149.0, []).category == "Subscriptions"
+    r = categorize("Kortköp 260529 GOOGLE *YouTubePremi", -129.0, [])
+    assert r.category == "Subscriptions"
+    assert r.needs_review is False
+
+
+def test_categorize_unknown_goes_unclear_for_review():
+    r = categorize("Kortköp 260720 NÅGOT OKÄNT AB", -250.0, [])
+    assert r.category == "Unclear"
+    assert r.source == "unclear"
+    assert r.needs_review is True
+
+
+def test_categorize_learned_rule_teaches_unclear_merchant():
+    rules = [("GOOGLE", "Subscriptions")]
+    r = categorize("Kortköp 260701 GOOGLE *Play", -49.0, rules)
+    assert r.category == "Subscriptions"
+    assert r.source == "learned"
+    assert r.needs_review is False
+
+
 def test_categorize_sj_and_vasttrafik_builtin():
     assert categorize("Kortköp 260720 SJ", -245.0, []).category == "Transport"
     assert categorize("Kortköp VÄSTTRAFIK", -39.0, []).category == "Transport"

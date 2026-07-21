@@ -204,6 +204,42 @@ def test_merge_budget_when_target_has_none():
 def test_cannot_delete_system_category():
     with pytest.raises(ValueError, match="system"):
         delete_category("Income")
+    with pytest.raises(ValueError, match="system"):
+        delete_category("Housing")
+    with pytest.raises(ValueError, match="system"):
+        delete_category("Groceries")
+
+
+def test_seed_restores_deleted_standard_categories():
+    from app.db import CATEGORIES
+    from app.services.categories import list_categories, seed_categories
+
+    with get_db() as conn:
+        # Simulate the old bug: user deleted several builtins that used to be allowed.
+        for slug in ("Housing", "Groceries", "Transport", "Restaurants"):
+            conn.execute("DELETE FROM categories WHERE slug = ?", (slug,))
+        remaining = {
+            r["slug"] for r in conn.execute("SELECT slug FROM categories").fetchall()
+        }
+        assert "Housing" not in remaining
+        seed_categories(conn)
+
+    slugs = {c["slug"] for c in list_categories()}
+    for slug in CATEGORIES:
+        assert slug in slugs
+    by_slug = {c["slug"]: c for c in list_categories()}
+    assert by_slug["Housing"]["name"] == "Boende"
+    assert by_slug["Groceries"]["name"] == "Mat"
+    assert by_slug["Housing"]["is_system"] == 1
+    assert by_slug["Shopping"]["is_system"] == 1
+
+
+def test_rename_standard_category_still_allowed():
+    renamed = rename_category("Housing", "Hemmet")
+    assert renamed["slug"] == "Housing"
+    assert renamed["name"] == "Hemmet"
+    with pytest.raises(ValueError, match="system"):
+        delete_category("Housing")
 
 
 def test_category_api_endpoints():
